@@ -87,11 +87,19 @@ h1 {
   color: var(--ink);
 }
 
-.form-grid {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr 1.2fr;
-  gap: 14px;
-  align-items: end;
+.form-grid{
+  display:grid;
+  gap:.75rem;
+  grid-template-columns:repeat(4,1fr);
+  align-items:end;
+}
+
+#availableText{
+  grid-column:1 / 2;
+}
+
+#assignmentForm button[type="submit"]{
+  grid-column:2 / 3;
 }
 
 label {
