@@ -262,7 +262,7 @@ function populateSelectors() {
   $('eventSelect').innerHTML =
     '<option value="">Select event</option>' +
     state.events
-      .map(e => `<option value="${e.id}">${e.name} (${fmtDate(e.start)})</option>`)
+      .map(e => `<option value="${e.id}">.map(e => `<option value="${e.id}">${e.name} (${fmtDate(e.start)}) - ${formatTime(e.start)} - ${formatTime(e.end)}</option>`)
       .join('');
 
   $('itemSelect').innerHTML =
@@ -356,4 +356,11 @@ function setStatus(id, msg, cls) {
   const el = $(id);
   el.className = `status ${cls}`;
   el.textContent = msg;
+}
+function formatTime(d) {
+  return d.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true
+  }).replace(" ", "");
 }
