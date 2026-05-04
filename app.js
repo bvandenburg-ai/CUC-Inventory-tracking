@@ -364,3 +364,10 @@ function formatTime(d) {
     hour12: true
   }).replace(" ", "");
 }
+function formatTime(d) {
+  return d.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true
+  }).replace(" ", "");
+}
