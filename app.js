@@ -60,9 +60,11 @@ async function loadAll() {
     const inventoryData = await apiGet('getInventory');
     const assignmentsData = await apiGet('getAssignments');
 
-    state.events = eventsData.events.map(normalizeEventFromBackend);
-    state.inventory = inventoryData.inventory.map(normalizeInventoryFromBackend);
-    state.assignments = assignmentsData.assignments.map(normalizeAssignmentFromBackend);
+    state.events = (eventsData.events || []).map(normalizeEventFromBackend);
+    state.inventory = (inventoryData.inventory || []).map(normalizeInventoryFromBackend);
+    state.assignments = (assignmentsData.assignments || []).map(normalizeAssignmentFromBackend);
+
+    console.log("Loaded inventory:", state.inventory);
 
     renderAll();
     setStatus('loadStatus', 'Loaded successfully.', 'ok');
@@ -74,37 +76,44 @@ async function loadAll() {
 function normalizeEventFromBackend(e) {
   return {
     id: e.id,
-    name: e.name || '(No title)',
+    name: e.name || e.title || '(No title)',
     start: new Date(e.start),
     end: new Date(e.end)
   };
 }
 
 function normalizeInventoryFromBackend(i) {
+  const itemId = i.ItemID || i["Item ID"] || i.itemId || "";
+  const itemName = i.ItemName || i["Item Name"] || i.Name || i.name || "(Unnamed item)";
+  const category = i.Category || i.category || "";
+  const totalQuantity = Number(i.TotalQuantity || i["Total Quantity"] || i.Quantity || i.quantity || 0);
+  const notes = i.Notes || i.notes || "";
+  const active = String(i.Active ?? i.active ?? "TRUE").toUpperCase();
+
   return [
-    i.ItemID,
-    i.ItemName,
-    i.Category,
-    i.TotalQuantity,
-    i.Notes,
-    String(i.Active || 'TRUE')
+    itemId,
+    itemName,
+    category,
+    totalQuantity,
+    notes,
+    active
   ];
 }
 
 function normalizeAssignmentFromBackend(a) {
   return [
-    a.AssignmentID,
-    a.CalendarEventID,
-    a.EventName,
-    a.EventDate,
-    a.StartTime,
-    a.EndTime,
-    a.ItemID,
-    a.ItemName,
-    a.QuantityAssigned,
-    a.Notes,
-    a.CreatedAt,
-    a.UpdatedAt
+    a.AssignmentID || "",
+    a.CalendarEventID || a.EventID || "",
+    a.EventName || "",
+    a.EventDate || "",
+    a.StartTime || "",
+    a.EndTime || "",
+    a.ItemID || "",
+    a.ItemName || "(Unnamed item)",
+    a.QuantityAssigned || 0,
+    a.Notes || "",
+    a.CreatedAt || "",
+    a.UpdatedAt || ""
   ];
 }
 
@@ -252,12 +261,15 @@ function renderInventory() {
 function populateSelectors() {
   $('eventSelect').innerHTML =
     '<option value="">Select event</option>' +
-    state.events.map(e => `<option value="${e.id}">${e.name} (${fmtDate(e.start)})</option>`).join('');
+    state.events
+      .map(e => `<option value="${e.id}">${e.name} (${fmtDate(e.start)})</option>`)
+      .join('');
 
   $('itemSelect').innerHTML =
     '<option value="">Select item</option>' +
     state.inventory
       .filter(r => (r[5] || 'TRUE') === 'TRUE')
+      .filter(i => i[0] && i[1])
       .map(i => `<option value="${i[0]}">${i[1]}</option>`)
       .join('');
 }
