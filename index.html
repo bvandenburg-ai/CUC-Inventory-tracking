@@ -9,45 +9,22 @@
 <body>
   <header class="topbar">
     <h1>Event Inventory Tracker</h1>
-    <p class="sub">Simple dashboard for events, inventory, and setup lists</p>
+    <p class="sub">Assign inventory to events and prevent overbooking</p>
   </header>
 
   <main class="container">
-    <section class="card" id="configCard">
-      <h2>Connection Settings</h2>
-      <p class="muted">Add your public configuration in <code>config.js</code>. No private secrets should be committed.</p>
-      <button id="loadBtn">Load Data</button>
+    <section class="card compact-card">
+      <div class="header-row">
+        <div>
+          <h2>Dashboard</h2>
+          <p class="muted">Load events, inventory, and assignments from Google Calendar and Sheets.</p>
+        </div>
+        <button id="loadBtn">Load / Refresh Data</button>
+      </div>
       <p id="loadStatus" class="status"></p>
     </section>
 
-    <section class="grid-2">
-      <section class="card">
-        <h2>Today’s Events</h2>
-        <div id="todayEvents" class="list"></div>
-      </section>
-      <section class="card">
-        <h2>Upcoming Events</h2>
-        <div id="upcomingEvents" class="list"></div>
-      </section>
-    </section>
-
-    <section class="grid-2">
-      <section class="card">
-        <h2>Inventory Warnings</h2>
-        <div id="inventoryWarnings" class="list"></div>
-      </section>
-      <section class="card">
-        <h2>Overbooking Issues</h2>
-        <div id="overbookings" class="list"></div>
-      </section>
-    </section>
-
-    <section class="card">
-      <h2>Events</h2>
-      <div id="eventsList" class="list"></div>
-    </section>
-
-    <section class="card">
+    <section class="card assign-card">
       <h2>Assign Items</h2>
       <form id="assignmentForm" class="form-grid">
         <label>Event
@@ -70,9 +47,20 @@
       <p id="formMessage" class="status"></p>
     </section>
 
+    <section class="grid-2">
+      <section class="card">
+        <h2>Inventory Warnings</h2>
+        <div id="inventoryWarnings" class="list"></div>
+      </section>
+      <section class="card">
+        <h2>Overbooking Issues</h2>
+        <div id="overbookings" class="list"></div>
+      </section>
+    </section>
+
     <section class="card">
-      <h2>Inventory</h2>
-      <div id="inventoryList" class="list"></div>
+      <h2>Upcoming Events Calendar</h2>
+      <div id="calendarView" class="calendar-grid"></div>
     </section>
 
     <section class="card">
@@ -84,6 +72,17 @@
       <div id="setupByEvent"></div>
       <div id="setupByItem" class="hidden"></div>
       <button onclick="window.print()">Print Setup List</button>
+    </section>
+
+    <section class="card">
+      <h2>Inventory</h2>
+      <div id="inventoryList" class="list"></div>
+    </section>
+
+    <section class="hidden">
+      <div id="todayEvents"></div>
+      <div id="upcomingEvents"></div>
+      <div id="eventsList"></div>
     </section>
   </main>
 
