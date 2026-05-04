@@ -1,108 +1,115 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CUC Event Inventory Tracker</title>
-  <link rel="stylesheet" href="styles.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CUC Event Inventory Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <main class="page">
-    <header class="topbar">
-      <div>
-        <h1>CUC Event Inventory Tracker</h1>
-        <p>Assign inventory to events and<br />prevent overbooking</p>
-      </div>
-      <button id="loadBtn" class="refresh-btn">Click Here First</button>
-    </header>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <h1>CUC Event Inventory Tracker</h1>
+        <p>Assign inventory to events and<br />prevent overbooking</p>
+      </div>
+      <button id="loadBtn" class="refresh-btn">Click Here First</button>
+    </header>
 
-    <p id="loadStatus" class="status"></p>
+    <p id="loadStatus" class="status"></p>
 
-    <section class="card assign-card">
-      <h2>Assign Items</h2>
-      <form id="assignmentForm" class="form-grid">
-        <input type="hidden" id="editingAssignmentId" />
+    <section class="card assign-card">
+      <h2>Assign Items</h2>
+      <form id="assignmentForm" class="form-grid">
+        <input type="hidden" id="editingAssignmentId" />
 
-        <label>Event
-          <select id="eventSelect" required></select>
-        </label>
+        <label>Event
+          <select id="eventSelect" required></select>
+        </label>
 
-        <label>Inventory Item
-          <select id="itemSelect" required></select>
-        </label>
+        <label>Inventory Item
+          <select id="itemSelect" required></select>
+        </label>
 
-        <label>Quantity
-          <input type="number" id="qtyInput" min="1" required />
-        </label>
+        <label>Quantity
+          <input type="number" id="qtyInput" min="1" required />
+        </label>
 
-        <label>Notes
-          <input type="text" id="notesInput" placeholder="Optional notes" />
-        </label>
+        <label>Notes
+          <input type="text" id="notesInput" placeholder="Optional notes" />
+        </label>
 
-        <div>
-          <p id="availableText" class="badge">Available: -</p>
-        </div>
+        <div>
+          <p id="availableText" class="badge">Available: -</p>
+        </div>
 
-        <button type="submit" id="saveAssignmentBtn">Save Assignment</button>
-        <button type="button" id="cancelEditBtn" class="secondary-btn hidden">Cancel Edit</button>
-      </form>
-      <p id="formMessage" class="status"></p>
-    </section>
+        <button type="submit" id="saveAssignmentBtn">Save Assignment</button>
+        <button type="button" id="cancelEditBtn" class="secondary-btn hidden">Cancel Edit</button>
+      </form>
+      <p id="formMessage" class="status"></p>
+    </section>
 
-    <section class="section-title">Upcoming Events</section>
+    <section class="section-title">
+      <span id="calendarMonthLabel">Upcoming Events</span>
+    </section>
 
-    <section class="calendar-shell">
-      <div class="calendar-weekdays">
-        <div>Sunday</div>
-        <div>Monday</div>
-        <div>Tuesday</div>
-        <div>Wednesday</div>
-        <div>Thursday</div>
-        <div>Friday</div>
-        <div>Saturday</div>
-      </div>
-      <div id="calendarView" class="calendar-grid"></div>
-    </section>
+    <div class="calendar-controls">
+      <button type="button" id="prevCalendarBtn">Previous 30 Days</button>
+      <button type="button" id="nextCalendarBtn">Next 30 Days</button>
+    </div>
 
-    <section class="card setup-card">
-      <h2>Setup List</h2>
+    <section class="calendar-shell">
+      <div class="calendar-weekdays">
+        <div>Sunday</div>
+        <div>Monday</div>
+        <div>Tuesday</div>
+        <div>Wednesday</div>
+        <div>Thursday</div>
+        <div>Friday</div>
+        <div>Saturday</div>
+      </div>
+      <div id="calendarView" class="calendar-grid"></div>
+    </section>
 
-      <div class="tabs">
-        <button class="tab-btn active" data-tab="byEvent">By Event</button>
-        <button class="tab-btn" data-tab="byItem">By Item</button>
-      </div>
+    <section class="card setup-card">
+      <h2>Setup List</h2>
 
-      <div id="setupByEvent"></div>
-      <div id="setupByItem" class="hidden"></div>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="byEvent">By Event</button>
+        <button class="tab-btn" data-tab="byItem">By Item</button>
+      </div>
 
-      <button onclick="window.print()" class="print-btn">Print Setup List</button>
-    </section>
+      <div id="setupByEvent"></div>
+      <div id="setupByItem" class="hidden"></div>
 
-    <section class="inventory-section">
-      <h2>CUC Master Inventory List</h2>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Item Name</th>
-              <th>Category</th>
-              <th>Qty in Stock</th>
-            </tr>
-          </thead>
-          <tbody id="inventoryTableBody"></tbody>
-        </table>
-      </div>
-    </section>
+      <button onclick="window.print()" class="print-btn">Print Setup List</button>
+    </section>
 
-    <section class="hidden">
-      <div id="todayEvents"></div>
-      <div id="upcomingEvents"></div>
-      <div id="eventsList"></div>
-      <div id="inventoryList"></div>
-    </section>
-  </main>
+    <section class="inventory-section">
+      <h2>CUC Master Inventory List</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Item Name</th>
+              <th>Category</th>
+              <th>Qty in Stock</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryTableBody"></tbody>
+        </table>
+      </div>
+    </section>
 
-  <script src="config.js"></script>
-  <script src="app.js"></script>
+    <section class="hidden">
+      <div id="todayEvents"></div>
+      <div id="upcomingEvents"></div>
+      <div id="eventsList"></div>
+      <div id="inventoryList"></div>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>
