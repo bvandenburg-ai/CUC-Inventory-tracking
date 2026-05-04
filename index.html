@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Event Inventory Tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <h1>Event Inventory Tracker</h1>
+    <p class="sub">Simple dashboard for events, inventory, and setup lists</p>
+  </header>
+
+  <main class="container">
+    <section class="card" id="configCard">
+      <h2>Connection Settings</h2>
+      <p class="muted">Add your public configuration in <code>config.js</code>. No private secrets should be committed.</p>
+      <button id="loadBtn">Load Data</button>
+      <p id="loadStatus" class="status"></p>
+    </section>
+
+    <section class="grid-2">
+      <section class="card">
+        <h2>Today’s Events</h2>
+        <div id="todayEvents" class="list"></div>
+      </section>
+      <section class="card">
+        <h2>Upcoming Events</h2>
+        <div id="upcomingEvents" class="list"></div>
+      </section>
+    </section>
+
+    <section class="grid-2">
+      <section class="card">
+        <h2>Inventory Warnings</h2>
+        <div id="inventoryWarnings" class="list"></div>
+      </section>
+      <section class="card">
+        <h2>Overbooking Issues</h2>
+        <div id="overbookings" class="list"></div>
+      </section>
+    </section>
+
+    <section class="card">
+      <h2>Events</h2>
+      <div id="eventsList" class="list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Assign Items</h2>
+      <form id="assignmentForm" class="form-grid">
+        <label>Event
+          <select id="eventSelect" required></select>
+        </label>
+        <label>Inventory Item
+          <select id="itemSelect" required></select>
+        </label>
+        <label>Quantity
+          <input type="number" id="qtyInput" min="1" required />
+        </label>
+        <label>Notes
+          <input type="text" id="notesInput" placeholder="Optional notes" />
+        </label>
+        <div>
+          <p id="availableText" class="badge">Available: -</p>
+        </div>
+        <button type="submit">Save Assignment</button>
+      </form>
+      <p id="formMessage" class="status"></p>
+    </section>
+
+    <section class="card">
+      <h2>Inventory</h2>
+      <div id="inventoryList" class="list"></div>
+    </section>
+
+    <section class="card">
+      <h2>Setup List</h2>
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="byEvent">By Event</button>
+        <button class="tab-btn" data-tab="byItem">By Item</button>
+      </div>
+      <div id="setupByEvent"></div>
+      <div id="setupByItem" class="hidden"></div>
+      <button onclick="window.print()">Print Setup List</button>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
