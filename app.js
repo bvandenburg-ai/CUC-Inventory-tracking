@@ -2,7 +2,7 @@
    Uses Google Apps Script backend:
    - Gets events from Google Calendar
    - Gets inventory + assignments from Google Sheets
-   - Saves assignments through Apps Script
+   - Saves, updates, and deletes assignments through Apps Script
    - Apps Script blocks overbooking
 */
 
@@ -16,6 +16,7 @@ $('assignmentForm').addEventListener('submit', saveAssignment);
 $('eventSelect').addEventListener('change', refreshAvailableBadge);
 $('itemSelect').addEventListener('change', refreshAvailableBadge);
 $('qtyInput').addEventListener('input', refreshAvailableBadge);
+$('cancelEditBtn').addEventListener('click', resetAssignmentForm);
 
 document.querySelectorAll('.tab-btn').forEach((btn) =>
   btn.addEventListener('click', () => {
@@ -101,43 +102,181 @@ function normalizeAssignmentFromBackend(a) {
     a.EndTime || "",
     a.ItemID || "",
     a.ItemName || "(Unnamed item)",
-    a.QuantityAssigned || 0,
+    Number(a.QuantityAssigned || 0),
     a.Notes || "",
     a.CreatedAt || "",
     a.UpdatedAt || ""
   ];
 }
 
-function overlap(aS, aE, bS, bE) {
-  return aS < bE && aE > bS;
+function renderAll() {
+  renderCalendarView();
+  renderInventory();
+  populateSelectors();
+  renderSetup();
 }
 
-function availabilityFor(eventId, itemId) {
-  const ev = state.events.find(e => e.id === eventId);
-  if (!ev) return { available: 0, total: 0, used: 0 };
+function populateSelectors() {
+  $('eventSelect').innerHTML =
+    '<option value="">Select event</option>' +
+    state.events
+      .sort((a, b) => a.start - b.start)
+      .map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name)} (${fmtDate(e.start)})</option>`)
+      .join('');
 
-  const inv = state.inventory.find(r => r[0] === itemId && (r[5] || 'TRUE') === 'TRUE');
-  if (!inv) return { available: 0, total: 0, used: 0 };
+  $('itemSelect').innerHTML =
+    '<option value="">Select item</option>' +
+    state.inventory
+      .filter(r => (r[5] || 'TRUE') === 'TRUE')
+      .filter(i => i[0] && i[1])
+      .map(i => `<option value="${escapeHtml(i[0])}">${escapeHtml(i[1])}</option>`)
+      .join('');
+}
 
-  const total = Number(inv[3] || 0);
-  let used = 0;
+function renderCalendarView() {
+  const calendar = $('calendarView');
+  calendar.innerHTML = '';
+
+  const now = new Date();
+  const upcomingEvents = state.events
+    .filter(e => e.end >= now)
+    .sort((a, b) => a.start - b.start);
+
+  if (!upcomingEvents.length) {
+    calendar.innerHTML = '<p class="muted">No upcoming events found.</p>';
+    return;
+  }
+
+  const firstEventDate = new Date(upcomingEvents[0].start);
+  const year = firstEventDate.getFullYear();
+  const month = firstEventDate.getMonth();
+
+  const firstOfMonth = new Date(year, month, 1);
+  const lastOfMonth = new Date(year, month + 1, 0);
+  const startingDay = firstOfMonth.getDay();
+  const totalDays = lastOfMonth.getDate();
+
+  const monthEvents = upcomingEvents.filter(e =>
+    e.start.getFullYear() === year && e.start.getMonth() === month
+  );
+
+  const cells = [];
+
+  for (let i = 0; i < startingDay; i++) {
+    cells.push('<div class="calendar-day empty"></div>');
+  }
+
+  for (let day = 1; day <= totalDays; day++) {
+    const eventsForDay = monthEvents.filter(e => e.start.getDate() === day);
+
+    const eventHtml = eventsForDay.map(e => `
+      <div class="calendar-event">
+        <strong>${escapeHtml(e.name)}</strong>
+        <div class="calendar-time">${fmtDisplayTime(e.start)} - ${fmtDisplayTime(e.end)}</div>
+        <button onclick="prefillEvent('${escapeAttr(e.id)}')">Assign Items</button>
+      </div>
+    `).join('');
+
+    cells.push(`
+      <div class="calendar-day">
+        <div class="day-number">${day}</div>
+        ${eventHtml}
+      </div>
+    `);
+  }
+
+  calendar.innerHTML = cells.join('');
+}
+
+function renderInventory() {
+  const rows = state.inventory
+    .filter(r => (r[5] || 'TRUE') === 'TRUE')
+    .map(r => `
+      <tr>
+        <td>${escapeHtml(r[1])}</td>
+        <td>${escapeHtml(r[2])}</td>
+        <td>${escapeHtml(String(r[3]))}</td>
+      </tr>
+    `)
+    .join('');
+
+  $('inventoryTableBody').innerHTML = rows || `
+    <tr>
+      <td colspan="3" class="muted">No active inventory yet.</td>
+    </tr>
+  `;
+}
+
+function renderSetup() {
+  renderSetupByEvent();
+  renderSetupByItem();
+}
+
+function renderSetupByEvent() {
+  const html = state.events
+    .map(event => {
+      const rows = state.assignments.filter(a => a[1] === event.id);
+      if (!rows.length) return '';
+
+      const itemRows = rows.map(a => `
+        <div class="setup-item">
+          <div class="setup-item-header">
+            <div>
+              <strong>${escapeHtml(a[8])} x ${escapeHtml(a[7])}</strong>
+              ${a[9] ? `<div class="muted">${escapeHtml(a[9])}</div>` : ''}
+            </div>
+            <div class="setup-actions">
+              <button class="edit-btn" onclick="editAssignment('${escapeAttr(a[0])}')">Edit</button>
+              <button class="delete-btn" onclick="deleteAssignment('${escapeAttr(a[0])}')">Un-assign</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      return `
+        <div class="setup-item">
+          <strong>${escapeHtml(event.name)}</strong>
+          <div class="muted">${event.start.toLocaleString()} - ${event.end.toLocaleString()}</div>
+          ${itemRows}
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join('');
+
+  $('setupByEvent').innerHTML = html || '<p class="muted">No inventory has been assigned yet.</p>';
+}
+
+function renderSetupByItem() {
+  const itemMap = {};
 
   state.assignments.forEach(a => {
-    if (a[6] !== itemId) return;
-
-    const existingStart = new Date(a[4]);
-    const existingEnd = new Date(a[5]);
-
-    if (overlap(existingStart, existingEnd, ev.start, ev.end)) {
-      used += Number(a[8] || 0);
-    }
+    if (!a[7]) return;
+    itemMap[a[7]] ??= [];
+    itemMap[a[7]].push(a);
   });
 
-  return {
-    available: total - used,
-    total,
-    used
-  };
+  const html = Object.entries(itemMap).map(([itemName, assignments]) => `
+    <div class="setup-item">
+      <strong>${escapeHtml(itemName)}</strong>
+      ${assignments.map(a => `
+        <div class="setup-item">
+          <div class="setup-item-header">
+            <div>
+              <strong>${escapeHtml(a[8])} for ${escapeHtml(a[2])}</strong>
+              <div class="muted">${escapeHtml(a[3])}</div>
+            </div>
+            <div class="setup-actions">
+              <button class="edit-btn" onclick="editAssignment('${escapeAttr(a[0])}')">Edit</button>
+              <button class="delete-btn" onclick="deleteAssignment('${escapeAttr(a[0])}')">Un-assign</button>
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
+
+  $('setupByItem').innerHTML = html || '<p class="muted">No inventory has been assigned yet.</p>';
 }
 
 function refreshAvailableBadge() {
@@ -153,10 +292,40 @@ function refreshAvailableBadge() {
   $('availableText').textContent = `Available: ${Math.max(0, a.available)} / ${a.total}`;
 }
 
+function availabilityFor(eventId, itemId, ignoreAssignmentId = '') {
+  const ev = state.events.find(e => e.id === eventId);
+  if (!ev) return { available: 0, total: 0, used: 0 };
+
+  const inv = state.inventory.find(r => r[0] === itemId && (r[5] || 'TRUE') === 'TRUE');
+  if (!inv) return { available: 0, total: 0, used: 0 };
+
+  const total = Number(inv[3] || 0);
+  let used = 0;
+
+  state.assignments.forEach(a => {
+    if (a[0] === ignoreAssignmentId) return;
+    if (a[6] !== itemId) return;
+
+    const existingStart = new Date(a[4]);
+    const existingEnd = new Date(a[5]);
+
+    if (overlap(existingStart, existingEnd, ev.start, ev.end)) {
+      used += Number(a[8] || 0);
+    }
+  });
+
+  return { available: total - used, total, used };
+}
+
+function overlap(aS, aE, bS, bE) {
+  return aS < bE && aE > bS;
+}
+
 async function saveAssignment(ev) {
   ev.preventDefault();
 
   try {
+    const editingId = $('editingAssignmentId').value;
     const eventId = $('eventSelect').value;
     const itemId = $('itemSelect').value;
     const qty = Number($('qtyInput').value || 0);
@@ -168,8 +337,11 @@ async function saveAssignment(ev) {
     const eventObj = state.events.find(e => e.id === eventId);
     const itemObj = state.inventory.find(i => i[0] === itemId);
 
+    const action = editingId ? 'updateAssignment' : 'addAssignment';
+
     const result = await apiPost({
-      action: 'addAssignment',
+      action,
+      assignmentId: editingId,
       eventId: eventObj.id,
       eventName: eventObj.name,
       eventDate: fmtDate(eventObj.start),
@@ -182,66 +354,11 @@ async function saveAssignment(ev) {
     });
 
     setStatus('formMessage', result.message, 'ok');
-
-    $('qtyInput').value = '';
-    $('notesInput').value = '';
-
+    resetAssignmentForm();
     await loadAll();
   } catch (e) {
     setStatus('formMessage', e.message, 'err');
   }
-}
-
-function renderAll() {
-  renderEvents();
-  renderInventory();
-  populateSelectors();
-  renderSetup();
-  renderWarnings();
-}
-
-function renderEvents() {
-  $('eventsList').innerHTML = '';
-  $('todayEvents').innerHTML = '';
-  $('upcomingEvents').innerHTML = '';
-
-  renderCalendarView();
-}
-
-function renderCalendarView() {
-  const calendar = $('calendarView');
-  calendar.innerHTML = '';
-
-  const upcomingEvents = state.events
-    .filter(e => e.start >= new Date())
-    .sort((a, b) => a.start - b.start);
-
-  const grouped = {};
-
-  upcomingEvents.forEach(event => {
-    const dateKey = fmtDate(event.start);
-    if (!grouped[dateKey]) grouped[dateKey] = [];
-    grouped[dateKey].push(event);
-  });
-
-  const html = Object.entries(grouped).map(([date, events]) => {
-    const eventCards = events.map(e => `
-      <div class="calendar-event">
-        <strong>${e.name}</strong>
-        <div class="calendar-time">${fmtDisplayTime(e.start)} - ${fmtDisplayTime(e.end)}</div>
-        <button onclick="prefillEvent('${e.id}')">Assign Items</button>
-      </div>
-    `).join('');
-
-    return `
-      <div class="calendar-day">
-        <div class="calendar-day-header">${formatDateHeading(date)}</div>
-        ${eventCards}
-      </div>
-    `;
-  }).join('');
-
-  calendar.innerHTML = html || '<p class="muted">No upcoming events found.</p>';
 }
 
 window.prefillEvent = (id) => {
@@ -250,116 +367,48 @@ window.prefillEvent = (id) => {
   window.scrollTo({ top: $('assignmentForm').offsetTop - 120, behavior: 'smooth' });
 };
 
-function renderInventory() {
-  $('inventoryList').innerHTML =
-    state.inventory
-      .filter(r => (r[5] || 'TRUE') === 'TRUE')
-      .map(r => `
-        <div class="item">
-          <strong>${r[1]}</strong>
-          <span class="muted">(${r[2]})</span>
-          <div>Total: ${r[3]}</div>
-        </div>
-      `)
-      .join('') || '<p class="muted">No active inventory yet.</p>';
-}
+window.editAssignment = (assignmentId) => {
+  const assignment = state.assignments.find(a => a[0] === assignmentId);
+  if (!assignment) return;
 
-function populateSelectors() {
-  $('eventSelect').innerHTML =
-    '<option value="">Select event</option>' +
-    state.events
-      .sort((a, b) => a.start - b.start)
-      .map(e => `<option value="${e.id}">${e.name} (${fmtDate(e.start)})</option>`)
-      .join('');
+  $('editingAssignmentId').value = assignment[0];
+  $('eventSelect').value = assignment[1];
+  $('itemSelect').value = assignment[6];
+  $('qtyInput').value = assignment[8];
+  $('notesInput').value = assignment[9] || '';
+  $('saveAssignmentBtn').textContent = 'Update Assignment';
+  $('cancelEditBtn').classList.remove('hidden');
 
-  $('itemSelect').innerHTML =
-    '<option value="">Select item</option>' +
-    state.inventory
-      .filter(r => (r[5] || 'TRUE') === 'TRUE')
-      .filter(i => i[0] && i[1])
-      .map(i => `<option value="${i[0]}">${i[1]}</option>`)
-      .join('');
-}
+  refreshAvailableBadge();
+  window.scrollTo({ top: $('assignmentForm').offsetTop - 120, behavior: 'smooth' });
+};
 
-function renderWarnings() {
-  const low = [];
+window.deleteAssignment = async (assignmentId) => {
+  const assignment = state.assignments.find(a => a[0] === assignmentId);
+  if (!assignment) return;
 
-  state.inventory.forEach(i => {
-    if ((i[5] || 'TRUE') !== 'TRUE') return;
+  const confirmed = confirm(`Un-assign ${assignment[8]} x ${assignment[7]} from ${assignment[2]}?`);
+  if (!confirmed) return;
 
-    const total = Number(i[3] || 0);
-
-    if (total <= 5) {
-      low.push(`<div class="item warn">Low stock: ${i[1]} (${total})</div>`);
-    }
-  });
-
-  $('inventoryWarnings').innerHTML = low.join('') || '<p class="muted">No inventory warnings.</p>';
-
-  $('overbookings').innerHTML =
-    findOverbookings().map(x => `<div class="item err">${x}</div>`).join('') ||
-    '<p class="muted">No overbooking issues.</p>';
-}
-
-function findOverbookings() {
-  const issues = [];
-
-  state.events.forEach(e => {
-    state.inventory.forEach(i => {
-      if ((i[5] || 'TRUE') !== 'TRUE') return;
-
-      const a = availabilityFor(e.id, i[0]);
-
-      if (a.available < 0) {
-        issues.push(`${i[1]} overbooked for ${e.name}`);
-      }
+  try {
+    const result = await apiPost({
+      action: 'deleteAssignment',
+      assignmentId
     });
-  });
 
-  return issues;
-}
+    setStatus('formMessage', result.message || 'Inventory un-assigned.', 'ok');
+    await loadAll();
+  } catch (e) {
+    setStatus('formMessage', e.message, 'err');
+  }
+};
 
-function renderSetup() {
-  const eventsWithAssignments = state.events
-    .map(e => {
-      const rows = state.assignments
-        .filter(a => a[1] === e.id)
-        .map(a => `<li>${a[8]} x ${a[7]}</li>`)
-        .join('');
-
-      if (!rows) return '';
-
-      return `
-        <div class="item">
-          <strong>${e.name}</strong>
-          <div class="muted">${e.start.toLocaleString()} - ${e.end.toLocaleString()}</div>
-          <ul>${rows}</ul>
-        </div>
-      `;
-    })
-    .filter(Boolean)
-    .join('');
-
-  $('setupByEvent').innerHTML =
-    eventsWithAssignments || '<p class="muted">No inventory has been assigned yet.</p>';
-
-  const itemMap = {};
-
-  state.assignments.forEach(a => {
-    if (!a[7]) return;
-    itemMap[a[7]] ??= [];
-    itemMap[a[7]].push(`${a[8]} for ${a[2]} (${a[3]})`);
-  });
-
-  $('setupByItem').innerHTML =
-    Object.entries(itemMap)
-      .map(([itemName, rows]) => `
-        <div class="item">
-          <strong>${itemName}</strong>
-          <ul>${rows.map(x => `<li>${x}</li>`).join('')}</ul>
-        </div>
-      `)
-      .join('') || '<p class="muted">No inventory has been assigned yet.</p>';
+function resetAssignmentForm() {
+  $('editingAssignmentId').value = '';
+  $('assignmentForm').reset();
+  $('availableText').textContent = 'Available: -';
+  $('saveAssignmentBtn').textContent = 'Save Assignment';
+  $('cancelEditBtn').classList.add('hidden');
 }
 
 function fmtDate(d) {
@@ -370,17 +419,21 @@ function fmtDisplayTime(d) {
   return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-function formatDateHeading(dateString) {
-  const date = new Date(dateString + 'T00:00:00');
-  return date.toLocaleDateString([], {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric'
-  });
-}
-
 function setStatus(id, msg, cls) {
   const el = $(id);
   el.className = `status ${cls}`;
   el.textContent = msg;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replaceAll('`', '&#096;');
 }
