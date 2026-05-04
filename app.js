@@ -11,12 +11,42 @@ const $ = (id) => document.getElementById(id);
 
 const API_URL = window.APP_CONFIG.API_URL;
 
+let calendarStartDate = new Date();
+calendarStartDate.setHours(0, 0, 0, 0);
+
 $('loadBtn').addEventListener('click', loadAll);
 $('assignmentForm').addEventListener('submit', saveAssignment);
 $('eventSelect').addEventListener('change', refreshAvailableBadge);
 $('itemSelect').addEventListener('change', refreshAvailableBadge);
 $('qtyInput').addEventListener('input', refreshAvailableBadge);
 $('cancelEditBtn').addEventListener('click', resetAssignmentForm);
+
+$('prevCalendarBtn').addEventListener('click', () => {
+  calendarStartDate.setDate(calendarStartDate.getDate() - 30);
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (calendarStartDate < today) {
+    calendarStartDate = today;
+  }
+
+  renderCalendarView();
+});
+
+$('nextCalendarBtn').addEventListener('click', () => {
+  const maxDate = new Date();
+  maxDate.setFullYear(maxDate.getFullYear() + 1);
+  maxDate.setHours(0, 0, 0, 0);
+
+  calendarStartDate.setDate(calendarStartDate.getDate() + 30);
+
+  if (calendarStartDate > maxDate) {
+    calendarStartDate = maxDate;
+  }
+
+  renderCalendarView();
+});
 
 document.querySelectorAll('.tab-btn').forEach((btn) =>
   btn.addEventListener('click', () => {
@@ -121,7 +151,7 @@ function populateSelectors() {
     '<option value="">Select event</option>' +
     state.events
       .sort((a, b) => a.start - b.start)
-      .map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name)} (${fmtDate(e.start)})</option>`)
+      .map(e => `<option value="${escapeAttr(e.id)}">${escapeHtml(e.name)} (${fmtDateDisplay(e.start)}) - ${fmtDisplayTimeCompact(e.start)} - ${fmtDisplayTimeCompact(e.end)}</option>`)
       .join('');
 
   $('itemSelect').innerHTML =
@@ -129,7 +159,7 @@ function populateSelectors() {
     state.inventory
       .filter(r => (r[5] || 'TRUE') === 'TRUE')
       .filter(i => i[0] && i[1])
-      .map(i => `<option value="${escapeHtml(i[0])}">${escapeHtml(i[1])}</option>`)
+      .map(i => `<option value="${escapeAttr(i[0])}">${escapeHtml(i[1])}</option>`)
       .join('');
 }
 
@@ -137,49 +167,62 @@ function renderCalendarView() {
   const calendar = $('calendarView');
   calendar.innerHTML = '';
 
-  const now = new Date();
-  const upcomingEvents = state.events
-    .filter(e => e.end >= now)
+  const start = new Date(calendarStartDate);
+  start.setHours(0, 0, 0, 0);
+
+  const end = new Date(start);
+  end.setDate(start.getDate() + 29);
+  end.setHours(23, 59, 59, 999);
+
+  $('calendarMonthLabel').textContent =
+    `${start.toLocaleDateString([], { month: 'long', year: 'numeric' })} - ${end.toLocaleDateString([], { month: 'long', year: 'numeric' })}`;
+
+  const eventsInRange = state.events
+    .filter(e => e.end >= start && e.start <= end)
     .sort((a, b) => a.start - b.start);
-
-  if (!upcomingEvents.length) {
-    calendar.innerHTML = '<p class="muted">No upcoming events found.</p>';
-    return;
-  }
-
-  const firstEventDate = new Date(upcomingEvents[0].start);
-  const year = firstEventDate.getFullYear();
-  const month = firstEventDate.getMonth();
-
-  const firstOfMonth = new Date(year, month, 1);
-  const lastOfMonth = new Date(year, month + 1, 0);
-  const startingDay = firstOfMonth.getDay();
-  const totalDays = lastOfMonth.getDate();
-
-  const monthEvents = upcomingEvents.filter(e =>
-    e.start.getFullYear() === year && e.start.getMonth() === month
-  );
 
   const cells = [];
 
-  for (let i = 0; i < startingDay; i++) {
-    cells.push('<div class="calendar-day empty"></div>');
-  }
+  for (let i = 0; i < 30; i++) {
+    const day = new Date(start);
+    day.setDate(start.getDate() + i);
 
-  for (let day = 1; day <= totalDays; day++) {
-    const eventsForDay = monthEvents.filter(e => e.start.getDate() === day);
+    const eventsForDay = eventsInRange.filter(e => fmtDate(e.start) === fmtDate(day));
 
-    const eventHtml = eventsForDay.map(e => `
-      <div class="calendar-event">
-        <strong>${escapeHtml(e.name)}</strong>
-        <div class="calendar-time">${fmtDisplayTime(e.start)} - ${fmtDisplayTime(e.end)}</div>
-        <button onclick="prefillEvent('${escapeAttr(e.id)}')">Assign Items</button>
-      </div>
-    `).join('');
+    const eventHtml = eventsForDay.map(e => {
+      const safeEventId = makeSafeId(e.id);
+
+      const inventoryOptions = state.inventory
+        .filter(r => (r[5] || 'TRUE') === 'TRUE')
+        .filter(i => i[0] && i[1])
+        .map(i => `<option value="${escapeAttr(i[0])}">${escapeHtml(i[1])}</option>`)
+        .join('');
+
+      return `
+        <div class="calendar-event">
+          <strong>${escapeHtml(e.name)}</strong>
+          <div class="calendar-time">${fmtDisplayTimeCompact(e.start)} - ${fmtDisplayTimeCompact(e.end)}</div>
+
+          <div class="inline-assign">
+            <select id="inlineItem-${safeEventId}">
+              <option value="">Select item</option>
+              ${inventoryOptions}
+            </select>
+
+            <input id="inlineQty-${safeEventId}" type="number" min="1" placeholder="Qty" />
+
+            <input id="inlineNotes-${safeEventId}" type="text" placeholder="Notes" />
+
+            <button onclick="saveInlineAssignment('${escapeAttr(e.id)}')">Assign</button>
+          </div>
+        </div>
+      `;
+    }).join('');
 
     cells.push(`
       <div class="calendar-day">
-        <div class="day-number">${day}</div>
+        <div class="day-number">${day.getDate()}</div>
+        <div class="day-label">${day.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</div>
         ${eventHtml}
       </div>
     `);
@@ -236,7 +279,7 @@ function renderSetupByEvent() {
       return `
         <div class="setup-item">
           <strong>${escapeHtml(event.name)}</strong>
-          <div class="muted">${event.start.toLocaleString()} - ${event.end.toLocaleString()}</div>
+          <div class="muted">${fmtDateDisplay(event.start)} - ${fmtDisplayTimeCompact(event.start)} - ${fmtDisplayTimeCompact(event.end)}</div>
           ${itemRows}
         </div>
       `;
@@ -264,7 +307,7 @@ function renderSetupByItem() {
           <div class="setup-item-header">
             <div>
               <strong>${escapeHtml(a[8])} for ${escapeHtml(a[2])}</strong>
-              <div class="muted">${escapeHtml(a[3])}</div>
+              <div class="muted">${escapeHtml(formatAssignmentDate(a))}</div>
             </div>
             <div class="setup-actions">
               <button class="edit-btn" onclick="editAssignment('${escapeAttr(a[0])}')">Edit</button>
@@ -361,6 +404,42 @@ async function saveAssignment(ev) {
   }
 }
 
+window.saveInlineAssignment = async (eventId) => {
+  try {
+    const safeEventId = makeSafeId(eventId);
+
+    const itemId = $(`inlineItem-${safeEventId}`).value;
+    const qty = Number($(`inlineQty-${safeEventId}`).value || 0);
+    const notes = $(`inlineNotes-${safeEventId}`).value || '';
+
+    if (!itemId || qty <= 0) {
+      alert('Please select an item and enter a quantity.');
+      return;
+    }
+
+    const eventObj = state.events.find(e => e.id === eventId);
+    const itemObj = state.inventory.find(i => i[0] === itemId);
+
+    const result = await apiPost({
+      action: 'addAssignment',
+      eventId: eventObj.id,
+      eventName: eventObj.name,
+      eventDate: fmtDate(eventObj.start),
+      startTime: eventObj.start.toISOString(),
+      endTime: eventObj.end.toISOString(),
+      itemId: itemObj[0],
+      itemName: itemObj[1],
+      quantity: qty,
+      notes
+    });
+
+    alert(result.message);
+    await loadAll();
+  } catch (e) {
+    alert(e.message);
+  }
+};
+
 window.prefillEvent = (id) => {
   $('eventSelect').value = id;
   refreshAvailableBadge();
@@ -415,14 +494,40 @@ function fmtDate(d) {
   return d.toISOString().slice(0, 10);
 }
 
-function fmtDisplayTime(d) {
-  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+function fmtDateDisplay(d) {
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const year = d.getFullYear();
+
+  return `${month}-${day}-${year}`;
+}
+
+function fmtDisplayTimeCompact(d) {
+  return d.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit'
+  }).replace(' ', '');
+}
+
+function formatAssignmentDate(a) {
+  const start = new Date(a[4]);
+  const end = new Date(a[5]);
+
+  if (!isNaN(start) && !isNaN(end)) {
+    return `${fmtDateDisplay(start)} - ${fmtDisplayTimeCompact(start)} - ${fmtDisplayTimeCompact(end)}`;
+  }
+
+  return a[3] || '';
 }
 
 function setStatus(id, msg, cls) {
   const el = $(id);
   el.className = `status ${cls}`;
   el.textContent = msg;
+}
+
+function makeSafeId(value) {
+  return String(value).replace(/[^a-zA-Z0-9_-]/g, '_');
 }
 
 function escapeHtml(value) {
