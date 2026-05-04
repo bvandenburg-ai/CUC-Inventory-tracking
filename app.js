@@ -9,7 +9,7 @@
 const state = { events: [], inventory: [], assignments: [] };
 const $ = (id) => document.getElementById(id);
 
-const API_URL = window.APP_CONFIG.API_URL;
+const API_URL = "https://script.google.com/macros/s/AKfycbznXk-uGrT89QYSqQPKuRRSRGx1F18_ThlhH70fYBdcAKBEJ0EeB4mmBY5Hi0x-5xZmyQ/exec";
 
 $('loadBtn').addEventListener('click', loadAll);
 $('assignmentForm').addEventListener('submit', saveAssignment);
