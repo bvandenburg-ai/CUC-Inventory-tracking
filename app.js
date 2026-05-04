@@ -64,8 +64,6 @@ async function loadAll() {
     state.inventory = (inventoryData.inventory || []).map(normalizeInventoryFromBackend);
     state.assignments = (assignmentsData.assignments || []).map(normalizeAssignmentFromBackend);
 
-    console.log("Loaded inventory:", state.inventory);
-
     renderAll();
     setStatus('loadStatus', 'Loaded successfully.', 'ok');
   } catch (e) {
@@ -90,14 +88,7 @@ function normalizeInventoryFromBackend(i) {
   const notes = i.Notes || i.notes || "";
   const active = String(i.Active ?? i.active ?? "TRUE").toUpperCase();
 
-  return [
-    itemId,
-    itemName,
-    category,
-    totalQuantity,
-    notes,
-    active
-  ];
+  return [itemId, itemName, category, totalQuantity, notes, active];
 }
 
 function normalizeAssignmentFromBackend(a) {
@@ -154,7 +145,7 @@ function refreshAvailableBadge() {
   const itemId = $('itemSelect').value;
 
   if (!eventId || !itemId) {
-    $('availableText').textContent = '';
+    $('availableText').textContent = 'Available: -';
     return;
   }
 
@@ -211,31 +202,46 @@ function renderAll() {
 
 function renderEvents() {
   $('eventsList').innerHTML = '';
+  $('todayEvents').innerHTML = '';
+  $('upcomingEvents').innerHTML = '';
 
-  const today = new Date();
-  const todayRows = [];
-  const upcoming = [];
+  renderCalendarView();
+}
 
-  state.events.forEach(e => {
-    const card = `
-      <div class="item">
-        <strong>${e.name}</strong>
-        <div>${e.start.toLocaleString()} - ${e.end.toLocaleString()}</div>
-        <button onclick="prefillEvent('${e.id}')">Manage Items</button>
-      </div>
-    `;
+function renderCalendarView() {
+  const calendar = $('calendarView');
+  calendar.innerHTML = '';
 
-    if (e.start.toDateString() === today.toDateString()) {
-      todayRows.push(card);
-    } else if (e.start > today) {
-      upcoming.push(card);
-    }
+  const upcomingEvents = state.events
+    .filter(e => e.start >= new Date())
+    .sort((a, b) => a.start - b.start);
 
-    $('eventsList').insertAdjacentHTML('beforeend', card);
+  const grouped = {};
+
+  upcomingEvents.forEach(event => {
+    const dateKey = fmtDate(event.start);
+    if (!grouped[dateKey]) grouped[dateKey] = [];
+    grouped[dateKey].push(event);
   });
 
-  $('todayEvents').innerHTML = todayRows.join('') || '<p class="muted">No events found today.</p>';
-  $('upcomingEvents').innerHTML = upcoming.join('') || '<p class="muted">No upcoming events.</p>';
+  const html = Object.entries(grouped).map(([date, events]) => {
+    const eventCards = events.map(e => `
+      <div class="calendar-event">
+        <strong>${e.name}</strong>
+        <div class="calendar-time">${fmtDisplayTime(e.start)} - ${fmtDisplayTime(e.end)}</div>
+        <button onclick="prefillEvent('${e.id}')">Assign Items</button>
+      </div>
+    `).join('');
+
+    return `
+      <div class="calendar-day">
+        <div class="calendar-day-header">${formatDateHeading(date)}</div>
+        ${eventCards}
+      </div>
+    `;
+  }).join('');
+
+  calendar.innerHTML = html || '<p class="muted">No upcoming events found.</p>';
 }
 
 window.prefillEvent = (id) => {
@@ -262,6 +268,7 @@ function populateSelectors() {
   $('eventSelect').innerHTML =
     '<option value="">Select event</option>' +
     state.events
+      .sort((a, b) => a.start - b.start)
       .map(e => `<option value="${e.id}">${e.name} (${fmtDate(e.start)})</option>`)
       .join('');
 
@@ -313,26 +320,33 @@ function findOverbookings() {
 }
 
 function renderSetup() {
-  const byEvent = state.events.map(e => {
-    const rows =
-      state.assignments
+  const eventsWithAssignments = state.events
+    .map(e => {
+      const rows = state.assignments
         .filter(a => a[1] === e.id)
         .map(a => `<li>${a[8]} x ${a[7]}</li>`)
-        .join('') || '<li>No inventory assigned yet.</li>';
+        .join('');
 
-    return `
-      <div class="item">
-        <strong>${e.name}</strong>
-        <ul>${rows}</ul>
-      </div>
-    `;
-  }).join('');
+      if (!rows) return '';
 
-  $('setupByEvent').innerHTML = byEvent || '<p class="muted">No events.</p>';
+      return `
+        <div class="item">
+          <strong>${e.name}</strong>
+          <div class="muted">${e.start.toLocaleString()} - ${e.end.toLocaleString()}</div>
+          <ul>${rows}</ul>
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join('');
+
+  $('setupByEvent').innerHTML =
+    eventsWithAssignments || '<p class="muted">No inventory has been assigned yet.</p>';
 
   const itemMap = {};
 
   state.assignments.forEach(a => {
+    if (!a[7]) return;
     itemMap[a[7]] ??= [];
     itemMap[a[7]].push(`${a[8]} for ${a[2]} (${a[3]})`);
   });
@@ -345,11 +359,24 @@ function renderSetup() {
           <ul>${rows.map(x => `<li>${x}</li>`).join('')}</ul>
         </div>
       `)
-      .join('') || '<p class="muted">No inventory assigned yet.</p>';
+      .join('') || '<p class="muted">No inventory has been assigned yet.</p>';
 }
 
 function fmtDate(d) {
   return d.toISOString().slice(0, 10);
+}
+
+function fmtDisplayTime(d) {
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function formatDateHeading(dateString) {
+  const date = new Date(dateString + 'T00:00:00');
+  return date.toLocaleDateString([], {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric'
+  });
 }
 
 function setStatus(id, msg, cls) {
