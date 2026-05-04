@@ -19,3 +19,78 @@ button:hover{opacity:.92}
 .tabs{display:flex;gap:.5rem;margin-bottom:.75rem}.tab-btn{background:#e5e7eb;color:#111827}.tab-btn.active{background:#111827;color:#fff}
 .hidden{display:none}
 @media print{button,.topbar{display:none}.container{max-width:none}}
+.header-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:1rem;
+  flex-wrap:wrap;
+}
+
+.header-row button{
+  max-width:220px;
+}
+
+.compact-card{
+  padding:.9rem 1rem;
+}
+
+.assign-card{
+  border:2px solid #111827;
+}
+
+.calendar-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(240px,1fr));
+  gap:1rem;
+}
+
+.calendar-day{
+  border:1px solid var(--border);
+  border-radius:14px;
+  background:#f9fafb;
+  overflow:hidden;
+}
+
+.calendar-day-header{
+  background:#111827;
+  color:#fff;
+  padding:.75rem;
+  font-weight:700;
+}
+
+.calendar-event{
+  padding:.75rem;
+  border-bottom:1px solid var(--border);
+  background:#fff;
+}
+
+.calendar-event:last-child{
+  border-bottom:none;
+}
+
+.calendar-event strong{
+  display:block;
+  margin-bottom:.25rem;
+}
+
+.calendar-time{
+  color:var(--muted);
+  font-size:.9rem;
+}
+
+.calendar-event button{
+  margin-top:.5rem;
+}
+
+@media print{
+  .assign-card,
+  .compact-card,
+  .grid-2,
+  .calendar-grid,
+  #inventoryList,
+  .tabs button,
+  #loadBtn{
+    display:none;
+  }
+}
