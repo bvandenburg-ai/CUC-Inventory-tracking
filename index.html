@@ -3,86 +3,102 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Event Inventory Tracker</title>
+  <title>CUC Event Inventory Tracker</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <h1>Event Inventory Tracker</h1>
-    <p class="sub">Assign inventory to events and prevent overbooking</p>
-  </header>
-
-  <main class="container">
-    <section class="card compact-card">
-      <div class="header-row">
-        <div>
-          <h2>Dashboard</h2>
-          <p class="muted">Load events, inventory, and assignments from Google Calendar and Sheets.</p>
-        </div>
-        <button id="loadBtn">Load / Refresh Data</button>
+  <main class="page">
+    <header class="topbar">
+      <div>
+        <h1>CUC Event Inventory Tracker</h1>
+        <p>Assign inventory to events and<br />prevent overbooking</p>
       </div>
-      <p id="loadStatus" class="status"></p>
-    </section>
+      <button id="loadBtn" class="refresh-btn">Refresh Here</button>
+    </header>
+
+    <p id="loadStatus" class="status"></p>
 
     <section class="card assign-card">
       <h2>Assign Items</h2>
       <form id="assignmentForm" class="form-grid">
+        <input type="hidden" id="editingAssignmentId" />
+
         <label>Event
           <select id="eventSelect" required></select>
         </label>
+
         <label>Inventory Item
           <select id="itemSelect" required></select>
         </label>
+
         <label>Quantity
           <input type="number" id="qtyInput" min="1" required />
         </label>
+
         <label>Notes
           <input type="text" id="notesInput" placeholder="Optional notes" />
         </label>
+
         <div>
           <p id="availableText" class="badge">Available: -</p>
         </div>
-        <button type="submit">Save Assignment</button>
+
+        <button type="submit" id="saveAssignmentBtn">Save Assignment</button>
+        <button type="button" id="cancelEditBtn" class="secondary-btn hidden">Cancel Edit</button>
       </form>
       <p id="formMessage" class="status"></p>
     </section>
 
-    <section class="grid-2">
-      <section class="card">
-        <h2>Inventory Warnings</h2>
-        <div id="inventoryWarnings" class="list"></div>
-      </section>
-      <section class="card">
-        <h2>Overbooking Issues</h2>
-        <div id="overbookings" class="list"></div>
-      </section>
-    </section>
+    <section class="section-title">Upcoming Events</section>
 
-    <section class="card">
-      <h2>Upcoming Events Calendar</h2>
+    <section class="calendar-shell">
+      <div class="calendar-weekdays">
+        <div>Sunday</div>
+        <div>Monday</div>
+        <div>Tuesday</div>
+        <div>Wednesday</div>
+        <div>Thursday</div>
+        <div>Friday</div>
+        <div>Saturday</div>
+      </div>
       <div id="calendarView" class="calendar-grid"></div>
     </section>
 
-    <section class="card">
+    <section class="card setup-card">
       <h2>Setup List</h2>
+
       <div class="tabs">
         <button class="tab-btn active" data-tab="byEvent">By Event</button>
         <button class="tab-btn" data-tab="byItem">By Item</button>
       </div>
+
       <div id="setupByEvent"></div>
       <div id="setupByItem" class="hidden"></div>
-      <button onclick="window.print()">Print Setup List</button>
+
+      <button onclick="window.print()" class="print-btn">Print Setup List</button>
     </section>
 
-    <section class="card">
-      <h2>Inventory</h2>
-      <div id="inventoryList" class="list"></div>
+    <section class="inventory-section">
+      <h2>CUC Master Inventory List</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Item Name</th>
+              <th>Category</th>
+              <th>Qty in Stock</th>
+            </tr>
+          </thead>
+          <tbody id="inventoryTableBody"></tbody>
+        </table>
+      </div>
     </section>
 
     <section class="hidden">
       <div id="todayEvents"></div>
       <div id="upcomingEvents"></div>
       <div id="eventsList"></div>
+      <div id="inventoryList"></div>
     </section>
   </main>
 
