@@ -10,6 +10,8 @@ const state = { events: [], inventory: [], assignments: [] };
 const $ = (id) => document.getElementById(id);
 
 const API_URL = window.APP_CONFIG.API_URL;
+let calendarStartDate = new Date();
+calendarStartDate.setHours(0, 0, 0, 0);
 
 $('loadBtn').addEventListener('click', loadAll);
 $('assignmentForm').addEventListener('submit', saveAssignment);
@@ -17,6 +19,26 @@ $('eventSelect').addEventListener('change', refreshAvailableBadge);
 $('itemSelect').addEventListener('change', refreshAvailableBadge);
 $('qtyInput').addEventListener('input', refreshAvailableBadge);
 $('cancelEditBtn').addEventListener('click', resetAssignmentForm);
+
+$('prevCalendarBtn').addEventListener('click', () => {
+  calendarStartDate.setDate(calendarStartDate.getDate() - 30);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  if (calendarStartDate < today) {
+    calendarStartDate = today;
+  }
+  renderCalendarView();
+});
+
+$('nextCalendarBtn').addEventListener('click', () => {
+  const maxDate = new Date();
+  maxDate.setFullYear(maxDate.getFullYear() + 1);
+  calendarStartDate.setDate(calendarStartDate.getDate() + 30);
+  if (calendarStartDate > maxDate) {
+    calendarStartDate = maxDate;
+  }
+  renderCalendarView();
+});
 
 document.querySelectorAll('.tab-btn').forEach((btn) =>
   btn.addEventListener('click', () => {
@@ -82,30 +104,30 @@ function normalizeEventFromBackend(e) {
 }
 
 function normalizeInventoryFromBackend(i) {
-  const itemId = i.ItemID || i["Item ID"] || i.itemId || "";
-  const itemName = i.ItemName || i["Item Name"] || i.Name || i.name || "(Unnamed item)";
-  const category = i.Category || i.category || "";
-  const totalQuantity = Number(i.TotalQuantity || i["Total Quantity"] || i.Quantity || i.quantity || 0);
-  const notes = i.Notes || i.notes || "";
-  const active = String(i.Active ?? i.active ?? "TRUE").toUpperCase();
+  const itemId = i.ItemID || i['Item ID'] || i.itemId || '';
+  const itemName = i.ItemName || i['Item Name'] || i.Name || i.name || '(Unnamed item)';
+  const category = i.Category || i.category || '';
+  const totalQuantity = Number(i.TotalQuantity || i['Total Quantity'] || i.Quantity || i.quantity || 0);
+  const notes = i.Notes || i.notes || '';
+  const active = String(i.Active ?? i.active ?? 'TRUE').toUpperCase();
 
   return [itemId, itemName, category, totalQuantity, notes, active];
 }
 
 function normalizeAssignmentFromBackend(a) {
   return [
-    a.AssignmentID || "",
-    a.CalendarEventID || a.EventID || "",
-    a.EventName || "",
-    a.EventDate || "",
-    a.StartTime || "",
-    a.EndTime || "",
-    a.ItemID || "",
-    a.ItemName || "(Unnamed item)",
+    a.AssignmentID || '',
+    a.CalendarEventID || a.EventID || '',
+    a.EventName || '',
+    a.EventDate || '',
+    a.StartTime || '',
+    a.EndTime || '',
+    a.ItemID || '',
+    a.ItemName || '(Unnamed item)',
     Number(a.QuantityAssigned || 0),
-    a.Notes || "",
-    a.CreatedAt || "",
-    a.UpdatedAt || ""
+    a.Notes || '',
+    a.CreatedAt || '',
+    a.UpdatedAt || ''
   ];
 }
 
@@ -121,15 +143,20 @@ function populateSelectors() {
     '<option value="">Select event</option>' +
     state.events
       .sort((a, b) => a.start - b.start)
-      .map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name)} (${fmtDate(e.start)})</option>`)
+      .map(
+        (e) =>
+          `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name)} (${fmtDateDisplay(e.start)}) - ${fmtDisplayTime(
+            e.start
+          )} - ${fmtDisplayTime(e.end)}</option>`
+      )
       .join('');
 
   $('itemSelect').innerHTML =
     '<option value="">Select item</option>' +
     state.inventory
-      .filter(r => (r[5] || 'TRUE') === 'TRUE')
-      .filter(i => i[0] && i[1])
-      .map(i => `<option value="${escapeHtml(i[0])}">${escapeHtml(i[1])}</option>`)
+      .filter((r) => (r[5] || 'TRUE') === 'TRUE')
+      .filter((i) => i[0] && i[1])
+      .map((i) => `<option value="${escapeHtml(i[0])}">${escapeHtml(i[1])}</option>`)
       .join('');
 }
 
@@ -137,49 +164,57 @@ function renderCalendarView() {
   const calendar = $('calendarView');
   calendar.innerHTML = '';
 
-  const now = new Date();
-  const upcomingEvents = state.events
-    .filter(e => e.end >= now)
+  const start = new Date(calendarStartDate);
+  const end = new Date(calendarStartDate);
+  end.setDate(start.getDate() + 29);
+
+  $('calendarMonthLabel').textContent = `${start.toLocaleDateString([], {
+    month: 'long',
+    year: 'numeric'
+  })} - ${end.toLocaleDateString([], { month: 'long', year: 'numeric' })}`;
+
+  const eventsInRange = state.events
+    .filter((e) => e.end >= start && e.start <= end)
     .sort((a, b) => a.start - b.start);
-
-  if (!upcomingEvents.length) {
-    calendar.innerHTML = '<p class="muted">No upcoming events found.</p>';
-    return;
-  }
-
-  const firstEventDate = new Date(upcomingEvents[0].start);
-  const year = firstEventDate.getFullYear();
-  const month = firstEventDate.getMonth();
-
-  const firstOfMonth = new Date(year, month, 1);
-  const lastOfMonth = new Date(year, month + 1, 0);
-  const startingDay = firstOfMonth.getDay();
-  const totalDays = lastOfMonth.getDate();
-
-  const monthEvents = upcomingEvents.filter(e =>
-    e.start.getFullYear() === year && e.start.getMonth() === month
-  );
 
   const cells = [];
 
-  for (let i = 0; i < startingDay; i++) {
-    cells.push('<div class="calendar-day empty"></div>');
-  }
+  for (let i = 0; i < 30; i++) {
+    const day = new Date(start);
+    day.setDate(start.getDate() + i);
 
-  for (let day = 1; day <= totalDays; day++) {
-    const eventsForDay = monthEvents.filter(e => e.start.getDate() === day);
+    const eventsForDay = eventsInRange.filter((e) => fmtDate(e.start) === fmtDate(day));
 
-    const eventHtml = eventsForDay.map(e => `
+    const eventHtml = eventsForDay
+      .map((e) => {
+        const inventoryOptions = state.inventory
+          .filter((r) => (r[5] || 'TRUE') === 'TRUE')
+          .filter((inv) => inv[0] && inv[1])
+          .map((inv) => `<option value="${escapeAttr(inv[0])}">${escapeHtml(inv[1])}</option>`)
+          .join('');
+
+        return `
       <div class="calendar-event">
         <strong>${escapeHtml(e.name)}</strong>
         <div class="calendar-time">${fmtDisplayTime(e.start)} - ${fmtDisplayTime(e.end)}</div>
-        <button onclick="prefillEvent('${escapeAttr(e.id)}')">Assign Items</button>
+        <div class="inline-assign">
+          <select id="inlineItem-${escapeAttr(e.id)}">
+            <option value="">Select item</option>
+            ${inventoryOptions}
+          </select>
+          <input id="inlineQty-${escapeAttr(e.id)}" type="number" min="1" placeholder="Qty" />
+          <input id="inlineNotes-${escapeAttr(e.id)}" type="text" placeholder="Notes" />
+          <button onclick="saveInlineAssignment('${escapeAttr(e.id)}')">Assign</button>
+        </div>
       </div>
-    `).join('');
+    `;
+      })
+      .join('');
 
     cells.push(`
       <div class="calendar-day">
-        <div class="day-number">${day}</div>
+        <div class="day-number">${day.getDate()}</div>
+        <div class="muted">${day.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</div>
         ${eventHtml}
       </div>
     `);
@@ -190,17 +225,20 @@ function renderCalendarView() {
 
 function renderInventory() {
   const rows = state.inventory
-    .filter(r => (r[5] || 'TRUE') === 'TRUE')
-    .map(r => `
+    .filter((r) => (r[5] || 'TRUE') === 'TRUE')
+    .map(
+      (r) => `
       <tr>
         <td>${escapeHtml(r[1])}</td>
         <td>${escapeHtml(r[2])}</td>
         <td>${escapeHtml(String(r[3]))}</td>
       </tr>
-    `)
+    `
+    )
     .join('');
 
-  $('inventoryTableBody').innerHTML = rows || `
+  $('inventoryTableBody').innerHTML =
+    rows || `
     <tr>
       <td colspan="3" class="muted">No active inventory yet.</td>
     </tr>
@@ -214,11 +252,13 @@ function renderSetup() {
 
 function renderSetupByEvent() {
   const html = state.events
-    .map(event => {
-      const rows = state.assignments.filter(a => a[1] === event.id);
+    .map((event) => {
+      const rows = state.assignments.filter((a) => a[1] === event.id);
       if (!rows.length) return '';
 
-      const itemRows = rows.map(a => `
+      const itemRows = rows
+        .map(
+          (a) => `
         <div class="setup-item">
           <div class="setup-item-header">
             <div>
@@ -231,7 +271,9 @@ function renderSetupByEvent() {
             </div>
           </div>
         </div>
-      `).join('');
+      `
+        )
+        .join('');
 
       return `
         <div class="setup-item">
@@ -250,16 +292,20 @@ function renderSetupByEvent() {
 function renderSetupByItem() {
   const itemMap = {};
 
-  state.assignments.forEach(a => {
+  state.assignments.forEach((a) => {
     if (!a[7]) return;
     itemMap[a[7]] ??= [];
     itemMap[a[7]].push(a);
   });
 
-  const html = Object.entries(itemMap).map(([itemName, assignments]) => `
+  const html = Object.entries(itemMap)
+    .map(
+      ([itemName, assignments]) => `
     <div class="setup-item">
       <strong>${escapeHtml(itemName)}</strong>
-      ${assignments.map(a => `
+      ${assignments
+        .map(
+          (a) => `
         <div class="setup-item">
           <div class="setup-item-header">
             <div>
@@ -272,9 +318,13 @@ function renderSetupByItem() {
             </div>
           </div>
         </div>
-      `).join('')}
+      `
+        )
+        .join('')}
     </div>
-  `).join('');
+  `
+    )
+    .join('');
 
   $('setupByItem').innerHTML = html || '<p class="muted">No inventory has been assigned yet.</p>';
 }
@@ -293,16 +343,16 @@ function refreshAvailableBadge() {
 }
 
 function availabilityFor(eventId, itemId, ignoreAssignmentId = '') {
-  const ev = state.events.find(e => e.id === eventId);
+  const ev = state.events.find((e) => e.id === eventId);
   if (!ev) return { available: 0, total: 0, used: 0 };
 
-  const inv = state.inventory.find(r => r[0] === itemId && (r[5] || 'TRUE') === 'TRUE');
+  const inv = state.inventory.find((r) => r[0] === itemId && (r[5] || 'TRUE') === 'TRUE');
   if (!inv) return { available: 0, total: 0, used: 0 };
 
   const total = Number(inv[3] || 0);
   let used = 0;
 
-  state.assignments.forEach(a => {
+  state.assignments.forEach((a) => {
     if (a[0] === ignoreAssignmentId) return;
     if (a[6] !== itemId) return;
 
@@ -334,8 +384,8 @@ async function saveAssignment(ev) {
       return setStatus('formMessage', 'Please select an event, item, and quantity.', 'err');
     }
 
-    const eventObj = state.events.find(e => e.id === eventId);
-    const itemObj = state.inventory.find(i => i[0] === itemId);
+    const eventObj = state.events.find((e) => e.id === eventId);
+    const itemObj = state.inventory.find((i) => i[0] === itemId);
 
     const action = editingId ? 'updateAssignment' : 'addAssignment';
 
@@ -361,6 +411,40 @@ async function saveAssignment(ev) {
   }
 }
 
+window.saveInlineAssignment = async (eventId) => {
+  try {
+    const itemId = $(`inlineItem-${eventId}`).value;
+    const qty = Number($(`inlineQty-${eventId}`).value || 0);
+    const notes = $(`inlineNotes-${eventId}`).value || '';
+
+    if (!itemId || qty <= 0) {
+      alert('Please select an item and enter a quantity.');
+      return;
+    }
+
+    const eventObj = state.events.find((e) => e.id === eventId);
+    const itemObj = state.inventory.find((i) => i[0] === itemId);
+
+    const result = await apiPost({
+      action: 'addAssignment',
+      eventId: eventObj.id,
+      eventName: eventObj.name,
+      eventDate: fmtDate(eventObj.start),
+      startTime: eventObj.start.toISOString(),
+      endTime: eventObj.end.toISOString(),
+      itemId: itemObj[0],
+      itemName: itemObj[1],
+      quantity: qty,
+      notes
+    });
+
+    alert(result.message);
+    await loadAll();
+  } catch (e) {
+    alert(e.message);
+  }
+};
+
 window.prefillEvent = (id) => {
   $('eventSelect').value = id;
   refreshAvailableBadge();
@@ -368,7 +452,7 @@ window.prefillEvent = (id) => {
 };
 
 window.editAssignment = (assignmentId) => {
-  const assignment = state.assignments.find(a => a[0] === assignmentId);
+  const assignment = state.assignments.find((a) => a[0] === assignmentId);
   if (!assignment) return;
 
   $('editingAssignmentId').value = assignment[0];
@@ -384,7 +468,7 @@ window.editAssignment = (assignmentId) => {
 };
 
 window.deleteAssignment = async (assignmentId) => {
-  const assignment = state.assignments.find(a => a[0] === assignmentId);
+  const assignment = state.assignments.find((a) => a[0] === assignmentId);
   if (!assignment) return;
 
   const confirmed = confirm(`Un-assign ${assignment[8]} x ${assignment[7]} from ${assignment[2]}?`);
@@ -413,6 +497,13 @@ function resetAssignmentForm() {
 
 function fmtDate(d) {
   return d.toISOString().slice(0, 10);
+}
+
+function fmtDateDisplay(d) {
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${month}-${day}-${year}`;
 }
 
 function fmtDisplayTime(d) {
