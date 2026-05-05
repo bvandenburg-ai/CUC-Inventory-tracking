@@ -417,13 +417,21 @@ tbody tr:nth-child(even) {
   margin: 10px 0 14px;
 }
 
+/* Updated buttons to match "Click Here First" size/style */
 .calendar-controls button {
   width: auto;
   padding: 10px 18px;
   border-radius: 999px;
   background: var(--teal);
+  color: white;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-size: 12px;
+  cursor: pointer;
 }
 
+/* Keep inline assign styles (unchanged) */
 .inline-assign {
   margin-top: 8px;
   display: grid;
