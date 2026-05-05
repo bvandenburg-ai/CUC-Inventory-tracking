@@ -1,51 +1,38 @@
-/* Event Inventory Tracker */
+/* Event Inventory Tracker
+   Uses Google Apps Script backend:
+   - Gets events from Google Calendar
+   - Gets inventory + assignments from Google Sheets
+   - Saves, updates, and deletes assignments through Apps Script
+   - Apps Script blocks overbooking
+*/
 
-const API_URL = "https://script.google.com/macros/s/AKfycbznXk-uGrT89QYSqQPKuRRSRGx1F18_ThlhH70fYBdcAKBEJ0EeB4mmBY5Hi0x-5xZmyQ/exec";
-
-const state = {
-  events: [],
-  inventory: [],
-  assignments: []
-};
-
-let calendarStart = new Date();
-let selectedCalendarEventId = null;
-
+const state = { events: [], inventory: [], assignments: [] };
 const $ = (id) => document.getElementById(id);
 
-document.addEventListener("DOMContentLoaded", () => {
-  $("refreshBtn").addEventListener("click", loadAll);
-  $("assignmentForm").addEventListener("submit", saveAssignmentFromMainForm);
+const API_URL = window.APP_CONFIG.API_URL;
 
-  $("eventSelect").addEventListener("change", refreshAvailableBadge);
-  $("itemSelect").addEventListener("change", refreshAvailableBadge);
-  $("quantityInput").addEventListener("input", refreshAvailableBadge);
+$('loadBtn').addEventListener('click', loadAll);
+$('assignmentForm').addEventListener('submit', saveAssignment);
+$('eventSelect').addEventListener('change', refreshAvailableBadge);
+$('itemSelect').addEventListener('change', refreshAvailableBadge);
+$('qtyInput').addEventListener('input', refreshAvailableBadge);
+$('cancelEditBtn').addEventListener('click', resetAssignmentForm);
 
-  $("prevBtn").addEventListener("click", () => {
-    calendarStart.setDate(calendarStart.getDate() - 30);
-    renderCalendar();
-  });
-
-  $("nextBtn").addEventListener("click", () => {
-    calendarStart.setDate(calendarStart.getDate() + 30);
-    renderCalendar();
-  });
-
-  $("closeDialogBtn").addEventListener("click", () => {
-    $("calendarDialog").close();
-  });
-
-  $("calendarAssignForm").addEventListener("submit", saveAssignmentFromCalendar);
-
-  loadAll();
-});
+document.querySelectorAll('.tab-btn').forEach((btn) =>
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    $('setupByEvent').classList.toggle('hidden', btn.dataset.tab !== 'byEvent');
+    $('setupByItem').classList.toggle('hidden', btn.dataset.tab !== 'byItem');
+  })
+);
 
 async function apiGet(action) {
   const res = await fetch(`${API_URL}?action=${action}`);
   const data = await res.json();
 
   if (!data.success) {
-    throw new Error(data.message || `Failed: ${action}`);
+    throw new Error(data.message || `Failed to load ${action}`);
   }
 
   return data;
@@ -53,14 +40,14 @@ async function apiGet(action) {
 
 async function apiPost(payload) {
   const res = await fetch(API_URL, {
-    method: "POST",
+    method: 'POST',
     body: JSON.stringify(payload)
   });
 
   const data = await res.json();
 
   if (!data.success) {
-    throw new Error(data.message || "Save failed");
+    throw new Error(data.message || 'Request failed');
   }
 
   return data;
@@ -68,282 +55,385 @@ async function apiPost(payload) {
 
 async function loadAll() {
   try {
-    const eventsData = await apiGet("getEvents");
-    const inventoryData = await apiGet("getInventory");
-    const assignmentsData = await apiGet("getAssignments");
+    setStatus('loadStatus', 'Loading events and inventory...', 'ok');
 
-    state.events = (eventsData.events || []).map(normalizeEvent);
-    state.inventory = (inventoryData.inventory || []).map(normalizeInventory);
-    state.assignments = (assignmentsData.assignments || []).map(normalizeAssignment);
+    const eventsData = await apiGet('getEvents');
+    const inventoryData = await apiGet('getInventory');
+    const assignmentsData = await apiGet('getAssignments');
 
-    if (state.events.length) {
-      calendarStart = new Date(state.events[0].start);
-      calendarStart.setDate(1);
-    }
+    state.events = (eventsData.events || []).map(normalizeEventFromBackend);
+    state.inventory = (inventoryData.inventory || []).map(normalizeInventoryFromBackend);
+    state.assignments = (assignmentsData.assignments || []).map(normalizeAssignmentFromBackend);
 
     renderAll();
-  } catch (err) {
-    alert("Could not load data: " + err.message);
+    setStatus('loadStatus', 'Loaded successfully.', 'ok');
+  } catch (e) {
+    setStatus('loadStatus', `Load failed: ${e.message}`, 'err');
   }
 }
 
-function normalizeEvent(e) {
+function normalizeEventFromBackend(e) {
   return {
-    id: String(e.id || e.CalendarEventID || e.EventID || ""),
-    name: e.name || e.title || e.EventName || "(No title)",
-    start: new Date(e.start || e.StartTime),
-    end: new Date(e.end || e.EndTime)
+    id: e.id,
+    name: e.name || e.title || '(No title)',
+    start: new Date(e.start),
+    end: new Date(e.end)
   };
 }
 
-function normalizeInventory(i) {
-  return {
-    id: String(i.ItemID || i["Item ID"] || i.itemId || ""),
-    name: i.ItemName || i["Item Name"] || i.Name || i.name || "(Unnamed item)",
-    category: i.Category || i.category || "",
-    stock: Number(i.TotalQuantity || i["Total Quantity"] || i.Quantity || i.quantity || 0),
-    active: String(i.Active ?? i.active ?? "TRUE").toUpperCase()
-  };
+function normalizeInventoryFromBackend(i) {
+  const itemId = i.ItemID || i["Item ID"] || i.itemId || "";
+  const itemName = i.ItemName || i["Item Name"] || i.Name || i.name || "(Unnamed item)";
+  const category = i.Category || i.category || "";
+  const totalQuantity = Number(i.TotalQuantity || i["Total Quantity"] || i.Quantity || i.quantity || 0);
+  const notes = i.Notes || i.notes || "";
+  const active = String(i.Active ?? i.active ?? "TRUE").toUpperCase();
+
+  return [itemId, itemName, category, totalQuantity, notes, active];
 }
 
-function normalizeAssignment(a) {
-  return {
-    eventId: String(a.CalendarEventID || a.EventID || a.eventId || ""),
-    eventName: a.EventName || a.eventName || "",
-    itemId: String(a.ItemID || a.itemId || ""),
-    itemName: a.ItemName || a.itemName || "",
-    quantity: Number(a.QuantityAssigned || a.quantity || 0),
-    startTime: a.StartTime || a.startTime || "",
-    endTime: a.EndTime || a.endTime || "",
-    notes: a.Notes || a.notes || ""
-  };
+function normalizeAssignmentFromBackend(a) {
+  return [
+    a.AssignmentID || "",
+    a.CalendarEventID || a.EventID || "",
+    a.EventName || "",
+    a.EventDate || "",
+    a.StartTime || "",
+    a.EndTime || "",
+    a.ItemID || "",
+    a.ItemName || "(Unnamed item)",
+    Number(a.QuantityAssigned || 0),
+    a.Notes || "",
+    a.CreatedAt || "",
+    a.UpdatedAt || ""
+  ];
 }
 
 function renderAll() {
+  renderCalendarView();
+  renderInventory();
   populateSelectors();
-  renderInventoryTable();
-  renderCalendar();
-  refreshAvailableBadge();
+  renderSetup();
 }
 
 function populateSelectors() {
-  $("eventSelect").innerHTML =
+  $('eventSelect').innerHTML =
     '<option value="">Select event</option>' +
     state.events
-      .map(event => `
-        <option value="${event.id}">
-          ${event.name} (${formatDate(event.start)}) - ${formatTime(event.start)} - ${formatTime(event.end)}
-        </option>
-      `)
-      .join("");
+      .sort((a, b) => a.start - b.start)
+      .map(e => `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name)} (${fmtDate(e.start)})</option>`)
+      .join('');
 
-  $("itemSelect").innerHTML =
+  $('itemSelect').innerHTML =
     '<option value="">Select item</option>' +
     state.inventory
-      .filter(item => item.active === "TRUE")
-      .map(item => `<option value="${item.id}">${item.name}</option>`)
-      .join("");
-
-  $("calendarItemSelect").innerHTML =
-    state.inventory
-      .filter(item => item.active === "TRUE")
-      .map(item => `<option value="${item.id}">${item.name}</option>`)
-      .join("");
+      .filter(r => (r[5] || 'TRUE') === 'TRUE')
+      .filter(i => i[0] && i[1])
+      .map(i => `<option value="${escapeHtml(i[0])}">${escapeHtml(i[1])}</option>`)
+      .join('');
 }
 
-function renderInventoryTable() {
-  $("inventoryBody").innerHTML =
-    state.inventory
-      .filter(item => item.active === "TRUE")
-      .map(item => `
-        <tr>
-          <td>${item.name}</td>
-          <td>${item.category}</td>
-          <td>${item.stock}</td>
-        </tr>
-      `)
-      .join("");
-}
+function renderCalendarView() {
+  const calendar = $('calendarView');
+  calendar.innerHTML = '';
 
-function renderCalendar() {
-  const grid = $("calendarGrid");
-  grid.innerHTML = "";
+  const now = new Date();
+  const upcomingEvents = state.events
+    .filter(e => e.end >= now)
+    .sort((a, b) => a.start - b.start);
 
-  const endDate = new Date(calendarStart);
-  endDate.setDate(calendarStart.getDate() + 29);
-
-  $("calendarTitle").textContent =
-    `${formatMonthDay(calendarStart)} - ${formatMonthDay(endDate)}`;
-
-  const blanks = calendarStart.getDay();
-
-  for (let i = 0; i < blanks; i++) {
-    const empty = document.createElement("div");
-    empty.className = "day-box empty";
-    grid.appendChild(empty);
+  if (!upcomingEvents.length) {
+    calendar.innerHTML = '<p class="muted">No upcoming events found.</p>';
+    return;
   }
 
-  for (let i = 0; i < 30; i++) {
-    const date = new Date(calendarStart);
-    date.setDate(calendarStart.getDate() + i);
+  const firstEventDate = new Date(upcomingEvents[0].start);
+  const year = firstEventDate.getFullYear();
+  const month = firstEventDate.getMonth();
 
-    const dateKey = date.toDateString();
-    const dayEvents = state.events.filter(event => event.start.toDateString() === dateKey);
+  const firstOfMonth = new Date(year, month, 1);
+  const lastOfMonth = new Date(year, month + 1, 0);
+  const startingDay = firstOfMonth.getDay();
+  const totalDays = lastOfMonth.getDate();
 
-    const box = document.createElement("div");
-    box.className = "day-box";
+  const monthEvents = upcomingEvents.filter(e =>
+    e.start.getFullYear() === year && e.start.getMonth() === month
+  );
 
-    box.innerHTML = `
-      <div class="month-label">${date.toLocaleDateString("en-US", { month: "short" })}</div>
-      <div class="day-number">${date.getDate()}</div>
-      ${dayEvents.map(renderCalendarEvent).join("")}
-    `;
+  const cells = [];
 
-    grid.appendChild(box);
+  for (let i = 0; i < startingDay; i++) {
+    cells.push('<div class="calendar-day empty"></div>');
   }
 
-  document.querySelectorAll(".calendar-event").forEach(el => {
-    el.addEventListener("click", () => openCalendarDialog(el.dataset.eventId));
-  });
+  for (let day = 1; day <= totalDays; day++) {
+    const eventsForDay = monthEvents.filter(e => e.start.getDate() === day);
+
+    const eventHtml = eventsForDay.map(e => `
+      <div class="calendar-event">
+        <strong>${escapeHtml(e.name)}</strong>
+        <div class="calendar-time">${fmtDisplayTime(e.start)} - ${fmtDisplayTime(e.end)}</div>
+        <button onclick="prefillEvent('${escapeAttr(e.id)}')">Assign Items</button>
+      </div>
+    `).join('');
+
+    cells.push(`
+      <div class="calendar-day">
+        <div class="day-number">${day}</div>
+        ${eventHtml}
+      </div>
+    `);
+  }
+
+  calendar.innerHTML = cells.join('');
 }
 
-function renderCalendarEvent(event) {
-  const assigned = state.assignments.filter(a => a.eventId === event.id);
+function renderInventory() {
+  const rows = state.inventory
+    .filter(r => (r[5] || 'TRUE') === 'TRUE')
+    .map(r => `
+      <tr>
+        <td>${escapeHtml(r[1])}</td>
+        <td>${escapeHtml(r[2])}</td>
+        <td>${escapeHtml(String(r[3]))}</td>
+      </tr>
+    `)
+    .join('');
 
-  const assignedHtml = assigned.length
-    ? `<ul class="assigned-items">
-        ${assigned.map(a => `<li>${a.quantity} × ${a.itemName}</li>`).join("")}
-       </ul>`
-    : `<ul class="assigned-items"><li>No items assigned</li></ul>`;
-
-  return `
-    <div class="calendar-event event-card" data-event-id="${event.id}">
-      <div class="event-name">${event.name}</div>
-      <div class="event-time">${formatTime(event.start)} - ${formatTime(event.end)}</div>
-      ${assignedHtml}
-    </div>
+  $('inventoryTableBody').innerHTML = rows || `
+    <tr>
+      <td colspan="3" class="muted">No active inventory yet.</td>
+    </tr>
   `;
 }
 
-function openCalendarDialog(eventId) {
-  selectedCalendarEventId = eventId;
-
-  const event = state.events.find(e => e.id === eventId);
-  if (!event) return;
-
-  $("dialogEventTitle").textContent =
-    `${event.name} (${formatDate(event.start)}) - ${formatTime(event.start)} - ${formatTime(event.end)}`;
-
-  $("calendarQtyInput").value = 1;
-  $("calendarDialog").showModal();
+function renderSetup() {
+  renderSetupByEvent();
+  renderSetupByItem();
 }
 
-async function saveAssignmentFromMainForm(e) {
-  e.preventDefault();
+function renderSetupByEvent() {
+  const html = state.events
+    .map(event => {
+      const rows = state.assignments.filter(a => a[1] === event.id);
+      if (!rows.length) return '';
 
-  await saveAssignment({
-    eventId: $("eventSelect").value,
-    itemId: $("itemSelect").value,
-    quantity: Number($("quantityInput").value),
-    notes: $("notesInput").value || ""
+      const itemRows = rows.map(a => `
+        <div class="setup-item">
+          <div class="setup-item-header">
+            <div>
+              <strong>${escapeHtml(a[8])} x ${escapeHtml(a[7])}</strong>
+              ${a[9] ? `<div class="muted">${escapeHtml(a[9])}</div>` : ''}
+            </div>
+            <div class="setup-actions">
+              <button class="edit-btn" onclick="editAssignment('${escapeAttr(a[0])}')">Edit</button>
+              <button class="delete-btn" onclick="deleteAssignment('${escapeAttr(a[0])}')">Un-assign</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      return `
+        <div class="setup-item">
+          <strong>${escapeHtml(event.name)}</strong>
+          <div class="muted">${event.start.toLocaleString()} - ${event.end.toLocaleString()}</div>
+          ${itemRows}
+        </div>
+      `;
+    })
+    .filter(Boolean)
+    .join('');
+
+  $('setupByEvent').innerHTML = html || '<p class="muted">No inventory has been assigned yet.</p>';
+}
+
+function renderSetupByItem() {
+  const itemMap = {};
+
+  state.assignments.forEach(a => {
+    if (!a[7]) return;
+    itemMap[a[7]] ??= [];
+    itemMap[a[7]].push(a);
   });
 
-  $("quantityInput").value = "";
-  $("notesInput").value = "";
-}
+  const html = Object.entries(itemMap).map(([itemName, assignments]) => `
+    <div class="setup-item">
+      <strong>${escapeHtml(itemName)}</strong>
+      ${assignments.map(a => `
+        <div class="setup-item">
+          <div class="setup-item-header">
+            <div>
+              <strong>${escapeHtml(a[8])} for ${escapeHtml(a[2])}</strong>
+              <div class="muted">${escapeHtml(a[3])}</div>
+            </div>
+            <div class="setup-actions">
+              <button class="edit-btn" onclick="editAssignment('${escapeAttr(a[0])}')">Edit</button>
+              <button class="delete-btn" onclick="deleteAssignment('${escapeAttr(a[0])}')">Un-assign</button>
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `).join('');
 
-async function saveAssignmentFromCalendar(e) {
-  e.preventDefault();
-
-  await saveAssignment({
-    eventId: selectedCalendarEventId,
-    itemId: $("calendarItemSelect").value,
-    quantity: Number($("calendarQtyInput").value),
-    notes: ""
-  });
-
-  $("calendarDialog").close();
-}
-
-async function saveAssignment({ eventId, itemId, quantity, notes }) {
-  const event = state.events.find(e => e.id === eventId);
-  const item = state.inventory.find(i => i.id === itemId);
-
-  if (!event || !item || quantity <= 0) {
-    alert("Please choose an event, item, and quantity.");
-    return;
-  }
-
-  const available = availabilityFor(eventId, itemId);
-
-  if (quantity > available.available) {
-    alert(`Only ${available.available} available.`);
-    return;
-  }
-
-  await apiPost({
-    action: "addAssignment",
-    eventId: event.id,
-    eventName: event.name,
-    eventDate: formatDate(event.start),
-    startTime: event.start.toISOString(),
-    endTime: event.end.toISOString(),
-    itemId: item.id,
-    itemName: item.name,
-    quantity,
-    notes
-  });
-
-  await loadAll();
-}
-
-function availabilityFor(eventId, itemId) {
-  const item = state.inventory.find(i => i.id === itemId);
-  if (!item) return { available: 0, total: 0 };
-
-  const used = state.assignments
-    .filter(a => a.itemId === itemId)
-    .reduce((sum, a) => sum + Number(a.quantity || 0), 0);
-
-  return {
-    total: item.stock,
-    available: item.stock - used
-  };
+  $('setupByItem').innerHTML = html || '<p class="muted">No inventory has been assigned yet.</p>';
 }
 
 function refreshAvailableBadge() {
-  const eventId = $("eventSelect").value;
-  const itemId = $("itemSelect").value;
+  const eventId = $('eventSelect').value;
+  const itemId = $('itemSelect').value;
 
   if (!eventId || !itemId) {
-    $("availableText").textContent = "Available: -";
+    $('availableText').textContent = 'Available: -';
     return;
   }
 
-  const available = availabilityFor(eventId, itemId);
-  $("availableText").textContent = `Available: ${available.available} / ${available.total}`;
+  const a = availabilityFor(eventId, itemId);
+  $('availableText').textContent = `Available: ${Math.max(0, a.available)} / ${a.total}`;
 }
 
-function formatDate(date) {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  const year = date.getFullYear();
+function availabilityFor(eventId, itemId, ignoreAssignmentId = '') {
+  const ev = state.events.find(e => e.id === eventId);
+  if (!ev) return { available: 0, total: 0, used: 0 };
 
-  return `${month}-${day}-${year}`;
-}
+  const inv = state.inventory.find(r => r[0] === itemId && (r[5] || 'TRUE') === 'TRUE');
+  if (!inv) return { available: 0, total: 0, used: 0 };
 
-function formatTime(date) {
-  return date.toLocaleTimeString("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true
-  }).replace(" ", "");
-}
+  const total = Number(inv[3] || 0);
+  let used = 0;
 
-function formatMonthDay(date) {
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric"
+  state.assignments.forEach(a => {
+    if (a[0] === ignoreAssignmentId) return;
+    if (a[6] !== itemId) return;
+
+    const existingStart = new Date(a[4]);
+    const existingEnd = new Date(a[5]);
+
+    if (overlap(existingStart, existingEnd, ev.start, ev.end)) {
+      used += Number(a[8] || 0);
+    }
   });
+
+  return { available: total - used, total, used };
+}
+
+function overlap(aS, aE, bS, bE) {
+  return aS < bE && aE > bS;
+}
+
+async function saveAssignment(ev) {
+  ev.preventDefault();
+
+  try {
+    const editingId = $('editingAssignmentId').value;
+    const eventId = $('eventSelect').value;
+    const itemId = $('itemSelect').value;
+    const qty = Number($('qtyInput').value || 0);
+
+    if (!eventId || !itemId || qty <= 0) {
+      return setStatus('formMessage', 'Please select an event, item, and quantity.', 'err');
+    }
+
+    const eventObj = state.events.find(e => e.id === eventId);
+    const itemObj = state.inventory.find(i => i[0] === itemId);
+
+    const action = editingId ? 'updateAssignment' : 'addAssignment';
+
+    const result = await apiPost({
+      action,
+      assignmentId: editingId,
+      eventId: eventObj.id,
+      eventName: eventObj.name,
+      eventDate: fmtDate(eventObj.start),
+      startTime: eventObj.start.toISOString(),
+      endTime: eventObj.end.toISOString(),
+      itemId: itemObj[0],
+      itemName: itemObj[1],
+      quantity: qty,
+      notes: $('notesInput').value || ''
+    });
+
+    setStatus('formMessage', result.message, 'ok');
+    resetAssignmentForm();
+    await loadAll();
+  } catch (e) {
+    setStatus('formMessage', e.message, 'err');
+  }
+}
+
+window.prefillEvent = (id) => {
+  $('eventSelect').value = id;
+  refreshAvailableBadge();
+  window.scrollTo({ top: $('assignmentForm').offsetTop - 120, behavior: 'smooth' });
+};
+
+window.editAssignment = (assignmentId) => {
+  const assignment = state.assignments.find(a => a[0] === assignmentId);
+  if (!assignment) return;
+
+  $('editingAssignmentId').value = assignment[0];
+  $('eventSelect').value = assignment[1];
+  $('itemSelect').value = assignment[6];
+  $('qtyInput').value = assignment[8];
+  $('notesInput').value = assignment[9] || '';
+  $('saveAssignmentBtn').textContent = 'Update Assignment';
+  $('cancelEditBtn').classList.remove('hidden');
+
+  refreshAvailableBadge();
+  window.scrollTo({ top: $('assignmentForm').offsetTop - 120, behavior: 'smooth' });
+};
+
+window.deleteAssignment = async (assignmentId) => {
+  const assignment = state.assignments.find(a => a[0] === assignmentId);
+  if (!assignment) return;
+
+  const confirmed = confirm(`Un-assign ${assignment[8]} x ${assignment[7]} from ${assignment[2]}?`);
+  if (!confirmed) return;
+
+  try {
+    const result = await apiPost({
+      action: 'deleteAssignment',
+      assignmentId
+    });
+
+    setStatus('formMessage', result.message || 'Inventory un-assigned.', 'ok');
+    await loadAll();
+  } catch (e) {
+    setStatus('formMessage', e.message, 'err');
+  }
+};
+
+function resetAssignmentForm() {
+  $('editingAssignmentId').value = '';
+  $('assignmentForm').reset();
+  $('availableText').textContent = 'Available: -';
+  $('saveAssignmentBtn').textContent = 'Save Assignment';
+  $('cancelEditBtn').classList.add('hidden');
+}
+
+function fmtDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+function fmtDisplayTime(d) {
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function setStatus(id, msg, cls) {
+  const el = $(id);
+  el.className = `status ${cls}`;
+  el.textContent = msg;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value).replaceAll('`', '&#096;');
 }
