@@ -410,3 +410,35 @@ tbody tr:nth-child(even) {
     border: none;
   }
 }
+.calendar-controls {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin: 10px 0 14px;
+}
+
+.calendar-controls button {
+  width: auto;
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--teal);
+}
+
+.inline-assign {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.inline-assign select,
+.inline-assign input {
+  padding: 7px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.inline-assign button {
+  padding: 7px;
+  font-size: 12px;
+  border-radius: 8px;
+}
