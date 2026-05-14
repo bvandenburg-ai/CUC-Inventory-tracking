@@ -9,7 +9,7 @@
 const state = { events: [], inventory: [], assignments: [] };
 const $ = (id) => document.getElementById(id);
 
-const API_URL = window.APP_CONFIG.API_URL;
+const API_URL = "https://script.google.com/macros/s/AKfycbznXk-uGrT89QYSqQPKuRRSRGx1F18_ThlhH70fYBdcAKBEJ0EeB4mmBY5Hi0x-5xZmyQ/exec";
 let calendarStart = getSunday(new Date());
 const DAYS_TO_SHOW = 14;
 calendarStartDate.setHours(0, 0, 0, 0);
@@ -93,7 +93,7 @@ async function loadAll(resetCalendar = true) {
   } catch (err) {
     alert("Could not load data: " + err.message);
   }
-
+}
 function normalizeInventoryFromBackend(i) {
   const itemId = i.ItemID || i['Item ID'] || i.itemId || '';
   const itemName = i.ItemName || i['Item Name'] || i.Name || i.name || '(Unnamed item)';
