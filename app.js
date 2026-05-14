@@ -10,7 +10,8 @@ const state = { events: [], inventory: [], assignments: [] };
 const $ = (id) => document.getElementById(id);
 
 const API_URL = window.APP_CONFIG.API_URL;
-let calendarStartDate = new Date();
+let calendarStart = getSunday(new Date());
+const DAYS_TO_SHOW = 14;
 calendarStartDate.setHours(0, 0, 0, 0);
 
 $('loadBtn').addEventListener('click', loadAll);
@@ -21,22 +22,14 @@ $('qtyInput').addEventListener('input', refreshAvailableBadge);
 $('cancelEditBtn').addEventListener('click', resetAssignmentForm);
 
 $('prevCalendarBtn').addEventListener('click', () => {
-  calendarStartDate.setDate(calendarStartDate.getDate() - 30);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (calendarStartDate < today) {
-    calendarStartDate = today;
-  }
+  calendarStartDate.setDate(calendarStartDate.getDate() - 14);
+  calendarStartDate = getSunday(calendarStartDate);
   renderCalendarView();
 });
 
 $('nextCalendarBtn').addEventListener('click', () => {
-  const maxDate = new Date();
-  maxDate.setFullYear(maxDate.getFullYear() + 1);
-  calendarStartDate.setDate(calendarStartDate.getDate() + 30);
-  if (calendarStartDate > maxDate) {
-    calendarStartDate = maxDate;
-  }
+  calendarStartDate.setDate(calendarStartDate.getDate() + 14);
+  calendarStartDate = getSunday(calendarStartDate);
   renderCalendarView();
 });
 
@@ -75,33 +68,31 @@ async function apiPost(payload) {
   return data;
 }
 
-async function loadAll() {
+async function loadAll(resetCalendar = true) {
   try {
-    setStatus('loadStatus', 'Loading events and inventory...', 'ok');
+    const start = new Date(calendarStart);
+    const end = new Date(calendarStart);
+    end.setDate(start.getDate() + DAYS_TO_SHOW - 1);
 
-    const eventsData = await apiGet('getEvents');
-    const inventoryData = await apiGet('getInventory');
-    const assignmentsData = await apiGet('getAssignments');
+    const eventsData = await apiGet(
+      `getEvents&start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`
+    );
 
-    state.events = (eventsData.events || []).map(normalizeEventFromBackend);
-    state.inventory = (inventoryData.inventory || []).map(normalizeInventoryFromBackend);
-    state.assignments = (assignmentsData.assignments || []).map(normalizeAssignmentFromBackend);
+    const inventoryData = await apiGet("getInventory");
+    const assignmentsData = await apiGet("getAssignments");
+
+    state.events = (eventsData.events || []).map(normalizeEvent);
+    state.inventory = (inventoryData.inventory || []).map(normalizeInventory);
+    state.assignments = (assignmentsData.assignments || []).map(normalizeAssignment);
+
+    if (resetCalendar && state.events.length) {
+      calendarStart = getSunday(new Date(state.events[0].start));
+    }
 
     renderAll();
-    setStatus('loadStatus', 'Loaded successfully.', 'ok');
-  } catch (e) {
-    setStatus('loadStatus', `Load failed: ${e.message}`, 'err');
+  } catch (err) {
+    alert("Could not load data: " + err.message);
   }
-}
-
-function normalizeEventFromBackend(e) {
-  return {
-    id: e.id,
-    name: e.name || e.title || '(No title)',
-    start: new Date(e.start),
-    end: new Date(e.end)
-  };
-}
 
 function normalizeInventoryFromBackend(i) {
   const itemId = i.ItemID || i['Item ID'] || i.itemId || '';
@@ -159,19 +150,23 @@ function populateSelectors() {
       .map((i) => `<option value="${escapeHtml(i[0])}">${escapeHtml(i[1])}</option>`)
       .join('');
 }
-
 function renderCalendarView() {
   const calendar = $('calendarView');
   calendar.innerHTML = '';
 
+  calendarStartDate = getSunday(calendarStartDate);
+
   const start = new Date(calendarStartDate);
   const end = new Date(calendarStartDate);
-  end.setDate(start.getDate() + 29);
+  end.setDate(start.getDate() + 13);
 
   $('calendarMonthLabel').textContent = `${start.toLocaleDateString([], {
     month: 'long',
     year: 'numeric'
-  })} - ${end.toLocaleDateString([], { month: 'long', year: 'numeric' })}`;
+  })} - ${end.toLocaleDateString([], {
+    month: 'long',
+    year: 'numeric'
+  })}`;
 
   const eventsInRange = state.events
     .filter((e) => e.end >= start && e.start <= end)
@@ -179,7 +174,7 @@ function renderCalendarView() {
 
   const cells = [];
 
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 14; i++) {
     const day = new Date(start);
     day.setDate(start.getDate() + i);
 
@@ -193,28 +188,44 @@ function renderCalendarView() {
           .map((inv) => `<option value="${escapeAttr(inv[0])}">${escapeHtml(inv[1])}</option>`)
           .join('');
 
+        const assignedItems =
+          state.assignments
+            .filter((a) => a[1] === e.id)
+            .map((a) => `<li>${escapeHtml(a[8])} × ${escapeHtml(a[7])}</li>`)
+            .join('') || '<li>No items assigned</li>';
+
         return `
-      <div class="calendar-event">
-        <strong>${escapeHtml(e.name)}</strong>
-        <div class="calendar-time">${fmtDisplayTime(e.start)} - ${fmtDisplayTime(e.end)}</div>
-        <div class="inline-assign">
-          <select id="inlineItem-${escapeAttr(e.id)}">
-            <option value="">Select item</option>
-            ${inventoryOptions}
-          </select>
-          <input id="inlineQty-${escapeAttr(e.id)}" type="number" min="1" placeholder="Qty" />
-          <input id="inlineNotes-${escapeAttr(e.id)}" type="text" placeholder="Notes" />
-          <button onclick="saveInlineAssignment('${escapeAttr(e.id)}')">Assign</button>
-        </div>
-      </div>
-    `;
+          <div class="calendar-event">
+            <strong>${escapeHtml(e.name)}</strong>
+            <div class="calendar-time">${fmtDisplayTime(e.start)} - ${fmtDisplayTime(e.end)}</div>
+
+            <div class="inline-assign">
+              <select id="inlineItem-${escapeAttr(e.id)}">
+                <option value="">Select item</option>
+                ${inventoryOptions}
+              </select>
+              <input id="inlineQty-${escapeAttr(e.id)}" type="number" min="1" placeholder="Qty" />
+              <input id="inlineNotes-${escapeAttr(e.id)}" type="text" placeholder="Notes" />
+              <button onclick="saveInlineAssignment('${escapeAttr(e.id)}')">Assign</button>
+            </div>
+
+            <div class="assigned-in-calendar">
+              <strong>Assigned:</strong>
+              <ul>${assignedItems}</ul>
+            </div>
+          </div>
+        `;
       })
       .join('');
 
     cells.push(`
       <div class="calendar-day">
         <div class="day-number">${day.getDate()}</div>
-        <div class="muted">${day.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })}</div>
+        <div class="muted">${day.toLocaleDateString([], {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric'
+        })}</div>
         ${eventHtml}
       </div>
     `);
@@ -527,4 +538,53 @@ function escapeHtml(value) {
 
 function escapeAttr(value) {
   return escapeHtml(value).replaceAll('`', '&#096;');
+}
+function getSunday(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - d.getDay());
+  return d;
+}
+async function saveInlineAssignment(eventId) {
+  const itemId = $(`inlineItem-${eventId}`).value;
+  const quantity = Number($(`inlineQty-${eventId}`).value);
+  const notes = $(`inlineNotes-${eventId}`).value || '';
+
+  if (!itemId || quantity <= 0) {
+    alert('Please select an item and quantity.');
+    return;
+  }
+
+  const eventObj = state.events.find((e) => e.id === eventId);
+
+  if (!eventObj) {
+    alert('Event not found.');
+    return;
+  }
+
+  const itemObj = state.inventory.find((i) => i[0] === itemId);
+
+  if (!itemObj) {
+    alert('Inventory item not found.');
+    return;
+  }
+
+  try {
+    await apiPost({
+      action: 'addAssignment',
+      eventId: eventObj.id,
+      eventName: eventObj.name,
+      eventDate: fmtDate(eventObj.start),
+      startTime: eventObj.start.toISOString(),
+      endTime: eventObj.end.toISOString(),
+      itemId: itemObj[0],
+      itemName: itemObj[1],
+      quantity,
+      notes
+    });
+
+    await loadAll(false);
+  } catch (err) {
+    alert(err.message);
+  }
 }
