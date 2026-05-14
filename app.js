@@ -213,11 +213,23 @@ function renderCalendarView() {
           .map((inv) => `<option value="${escapeAttr(inv[0])}">${escapeHtml(inv[1])}</option>`)
           .join('');
 
-        const assignedItems =
-          state.assignments
-            .filter((a) => a[1] === e.id)
-            .map((a) => `<li>${escapeHtml(a[8])} × ${escapeHtml(a[7])}</li>`)
-            .join('') || '<li>No items assigned</li>';
+const assignedItems =
+  state.assignments
+    .filter((a) => a[1] === e.id)
+    .map(
+      (a) => `
+        <li>
+          ${escapeHtml(a[8])} × ${escapeHtml(a[7])}
+          <button 
+            type="button" 
+            class="calendar-unassign-btn"
+            onclick="deleteAssignment('${escapeAttr(a[0])}')">
+            Unassign
+          </button>
+        </li>
+      `
+    )
+    .join('') || '<li>No items assigned</li>';
 
         return `
           <div class="calendar-event">
