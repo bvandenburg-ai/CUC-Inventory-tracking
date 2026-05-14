@@ -10,27 +10,27 @@ const state = { events: [], inventory: [], assignments: [] };
 const $ = (id) => document.getElementById(id);
 
 const API_URL = "https://script.google.com/macros/s/AKfycbznXk-uGrT89QYSqQPKuRRSRGx1F18_ThlhH70fYBdcAKBEJ0EeB4mmBY5Hi0x-5xZmyQ/exec";
-let calendarStart = getSunday(new Date());
-const DAYS_TO_SHOW = 14;
-calendarStartDate.setHours(0, 0, 0, 0);
 
-$('loadBtn').addEventListener('click', loadAll);
+let calendarStartDate = getSunday(new Date());
+const DAYS_TO_SHOW = 14;
+
+$('loadBtn').addEventListener('click', () => loadAll(false));
 $('assignmentForm').addEventListener('submit', saveAssignment);
 $('eventSelect').addEventListener('change', refreshAvailableBadge);
 $('itemSelect').addEventListener('change', refreshAvailableBadge);
 $('qtyInput').addEventListener('input', refreshAvailableBadge);
 $('cancelEditBtn').addEventListener('click', resetAssignmentForm);
 
-$('prevCalendarBtn').addEventListener('click', () => {
-  calendarStartDate.setDate(calendarStartDate.getDate() - 14);
+$('prevCalendarBtn').addEventListener('click', async () => {
+  calendarStartDate.setDate(calendarStartDate.getDate() - DAYS_TO_SHOW);
   calendarStartDate = getSunday(calendarStartDate);
-  renderCalendarView();
+  await loadAll(false);
 });
 
-$('nextCalendarBtn').addEventListener('click', () => {
-  calendarStartDate.setDate(calendarStartDate.getDate() + 14);
+$('nextCalendarBtn').addEventListener('click', async () => {
+  calendarStartDate.setDate(calendarStartDate.getDate() + DAYS_TO_SHOW);
   calendarStartDate = getSunday(calendarStartDate);
-  renderCalendarView();
+  await loadAll(false);
 });
 
 document.querySelectorAll('.tab-btn').forEach((btn) =>
@@ -68,32 +68,56 @@ async function apiPost(payload) {
   return data;
 }
 
-async function loadAll(resetCalendar = true) {
+async function loadAll(resetCalendar = false) {
   try {
-    const start = new Date(calendarStart);
-    const end = new Date(calendarStart);
+    const start = new Date(calendarStartDate);
+    const end = new Date(calendarStartDate);
     end.setDate(start.getDate() + DAYS_TO_SHOW - 1);
 
     const eventsData = await apiGet(
       `getEvents&start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`
     );
 
-    const inventoryData = await apiGet("getInventory");
-    const assignmentsData = await apiGet("getAssignments");
+    const inventoryData = await apiGet('getInventory');
+    const assignmentsData = await apiGet('getAssignments');
 
-    state.events = (eventsData.events || []).map(normalizeEvent);
-    state.inventory = (inventoryData.inventory || []).map(normalizeInventory);
-    state.assignments = (assignmentsData.assignments || []).map(normalizeAssignment);
+    state.events = (eventsData.events || []).map(normalizeEventFromBackend);
+    state.inventory = (inventoryData.inventory || []).map(normalizeInventoryFromBackend);
+    state.assignments = (assignmentsData.assignments || []).map(normalizeAssignmentFromBackend);
 
     if (resetCalendar && state.events.length) {
-      calendarStart = getSunday(new Date(state.events[0].start));
+      calendarStartDate = getSunday(new Date(state.events[0].start));
     }
 
     renderAll();
   } catch (err) {
-    alert("Could not load data: " + err.message);
+    alert('Could not load data: ' + err.message);
   }
 }
+
+function normalizeEventFromBackend(e) {
+  const startValue =
+    e.start ||
+    e.StartTime ||
+    e.startTime ||
+    e.Start ||
+    e['Start Time'];
+
+  const endValue =
+    e.end ||
+    e.EndTime ||
+    e.endTime ||
+    e.End ||
+    e['End Time'];
+
+  return {
+    id: String(e.id || e.CalendarEventID || e.EventID || e.eventId || e['Event ID'] || ''),
+    name: e.name || e.title || e.EventName || e.eventName || e['Event Name'] || '(No title)',
+    start: new Date(startValue),
+    end: new Date(endValue)
+  };
+}
+
 function normalizeInventoryFromBackend(i) {
   const itemId = i.ItemID || i['Item ID'] || i.itemId || '';
   const itemName = i.ItemName || i['Item Name'] || i.Name || i.name || '(Unnamed item)';
@@ -127,6 +151,7 @@ function renderAll() {
   renderInventory();
   populateSelectors();
   renderSetup();
+  refreshAvailableBadge();
 }
 
 function populateSelectors() {
@@ -136,9 +161,7 @@ function populateSelectors() {
       .sort((a, b) => a.start - b.start)
       .map(
         (e) =>
-          `<option value="${escapeHtml(e.id)}">${escapeHtml(e.name)} (${fmtDateDisplay(e.start)}) - ${fmtDisplayTime(
-            e.start
-          )} - ${fmtDisplayTime(e.end)}</option>`
+          `<option value="${escapeAttr(e.id)}">${escapeHtml(e.name)} (${fmtDateDisplay(e.start)}) - ${fmtDisplayTime(e.start)} - ${fmtDisplayTime(e.end)}</option>`
       )
       .join('');
 
@@ -147,9 +170,10 @@ function populateSelectors() {
     state.inventory
       .filter((r) => (r[5] || 'TRUE') === 'TRUE')
       .filter((i) => i[0] && i[1])
-      .map((i) => `<option value="${escapeHtml(i[0])}">${escapeHtml(i[1])}</option>`)
+      .map((i) => `<option value="${escapeAttr(i[0])}">${escapeHtml(i[1])}</option>`)
       .join('');
 }
+
 function renderCalendarView() {
   const calendar = $('calendarView');
   calendar.innerHTML = '';
@@ -158,7 +182,7 @@ function renderCalendarView() {
 
   const start = new Date(calendarStartDate);
   const end = new Date(calendarStartDate);
-  end.setDate(start.getDate() + 13);
+  end.setDate(start.getDate() + DAYS_TO_SHOW - 1);
 
   $('calendarMonthLabel').textContent = `${start.toLocaleDateString([], {
     month: 'long',
@@ -169,12 +193,13 @@ function renderCalendarView() {
   })}`;
 
   const eventsInRange = state.events
+    .filter((e) => e.start instanceof Date && !Number.isNaN(e.start.getTime()))
     .filter((e) => e.end >= start && e.start <= end)
     .sort((a, b) => a.start - b.start);
 
   const cells = [];
 
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < DAYS_TO_SHOW; i++) {
     const day = new Date(start);
     day.setDate(start.getDate() + i);
 
@@ -416,7 +441,7 @@ async function saveAssignment(ev) {
 
     setStatus('formMessage', result.message, 'ok');
     resetAssignmentForm();
-    await loadAll();
+    await loadAll(false);
   } catch (e) {
     setStatus('formMessage', e.message, 'err');
   }
@@ -436,6 +461,11 @@ window.saveInlineAssignment = async (eventId) => {
     const eventObj = state.events.find((e) => e.id === eventId);
     const itemObj = state.inventory.find((i) => i[0] === itemId);
 
+    if (!eventObj || !itemObj) {
+      alert('Event or inventory item not found.');
+      return;
+    }
+
     const result = await apiPost({
       action: 'addAssignment',
       eventId: eventObj.id,
@@ -449,8 +479,8 @@ window.saveInlineAssignment = async (eventId) => {
       notes
     });
 
-    alert(result.message);
-    await loadAll();
+    alert(result.message || 'Assignment saved.');
+    await loadAll(false);
   } catch (e) {
     alert(e.message);
   }
@@ -492,7 +522,7 @@ window.deleteAssignment = async (assignmentId) => {
     });
 
     setStatus('formMessage', result.message || 'Inventory un-assigned.', 'ok');
-    await loadAll();
+    await loadAll(false);
   } catch (e) {
     setStatus('formMessage', e.message, 'err');
   }
@@ -523,6 +553,7 @@ function fmtDisplayTime(d) {
 
 function setStatus(id, msg, cls) {
   const el = $(id);
+  if (!el) return;
   el.className = `status ${cls}`;
   el.textContent = msg;
 }
@@ -539,52 +570,12 @@ function escapeHtml(value) {
 function escapeAttr(value) {
   return escapeHtml(value).replaceAll('`', '&#096;');
 }
+
 function getSunday(date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   d.setDate(d.getDate() - d.getDay());
   return d;
 }
-async function saveInlineAssignment(eventId) {
-  const itemId = $(`inlineItem-${eventId}`).value;
-  const quantity = Number($(`inlineQty-${eventId}`).value);
-  const notes = $(`inlineNotes-${eventId}`).value || '';
 
-  if (!itemId || quantity <= 0) {
-    alert('Please select an item and quantity.');
-    return;
-  }
-
-  const eventObj = state.events.find((e) => e.id === eventId);
-
-  if (!eventObj) {
-    alert('Event not found.');
-    return;
-  }
-
-  const itemObj = state.inventory.find((i) => i[0] === itemId);
-
-  if (!itemObj) {
-    alert('Inventory item not found.');
-    return;
-  }
-
-  try {
-    await apiPost({
-      action: 'addAssignment',
-      eventId: eventObj.id,
-      eventName: eventObj.name,
-      eventDate: fmtDate(eventObj.start),
-      startTime: eventObj.start.toISOString(),
-      endTime: eventObj.end.toISOString(),
-      itemId: itemObj[0],
-      itemName: itemObj[1],
-      quantity,
-      notes
-    });
-
-    await loadAll(false);
-  } catch (err) {
-    alert(err.message);
-  }
-}
+loadAll(false);
